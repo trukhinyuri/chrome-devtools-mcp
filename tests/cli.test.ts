@@ -10,7 +10,7 @@ import {describe, it} from 'node:test';
 
 import {ConfigParser} from '../src/config/ConfigParser.js';
 import {getCliOptions, mcpOptions} from '../src/config/mcp-options.js';
-import {buildCommand} from '../src/config/cli-commands.js';
+import {buildCommand, shieldLiteralArgs} from '../src/config/cli-commands.js';
 import {commands} from '../src/config/cli-options.js';
 import {computeFlagUsage} from '../src/telemetry/flagUtils.js';
 import {DEFAULT_FILESYSTEM_ROOT} from '../src/config/mcp-options.js';
@@ -1311,6 +1311,53 @@ describe('cli command strings', () => {
         }
       }
     }
+  });
+});
+
+describe('cli literal args', () => {
+  it('passes regular args through unchanged', () => {
+    const input = ['fill', '1', '1_1', 'a-b', '-5', '--pageId', '1'];
+    const {argv, restore} = shieldLiteralArgs(input);
+    assert.deepStrictEqual(argv, input);
+    assert.strictEqual(restore('a-b'), 'a-b');
+  });
+
+  it('shields a lone dash', () => {
+    const {argv, restore} = shieldLiteralArgs(['fill', '1', '1_1', '-']);
+    assert.notStrictEqual(argv[3], '-');
+    assert.ok(!argv[3].startsWith('-'));
+    assert.deepStrictEqual(argv.slice(0, 3), ['fill', '1', '1_1']);
+    assert.strictEqual(restore(argv[3]), '-');
+  });
+
+  it('shields every token after -- and drops the separator', () => {
+    const {argv, restore} = shieldLiteralArgs([
+      'fill',
+      '1',
+      '--',
+      '--weird',
+      '- item',
+      '--',
+      '-abc',
+    ]);
+    assert.strictEqual(argv.length, 6);
+    assert.deepStrictEqual(argv.slice(0, 2), ['fill', '1']);
+    for (const token of argv.slice(2)) {
+      assert.ok(!token.startsWith('-'), `unexpected token ${token}`);
+    }
+    assert.deepStrictEqual(argv.slice(2).map(restore), [
+      '--weird',
+      '- item',
+      '--',
+      '-abc',
+    ]);
+  });
+
+  it('restores values nested in arrays and leaves other values alone', () => {
+    const {argv, restore} = shieldLiteralArgs(['cmd', '--', '-a', '-b']);
+    assert.deepStrictEqual(restore([argv[1], argv[2], 'x']), ['-a', '-b', 'x']);
+    assert.strictEqual(restore(42), 42);
+    assert.strictEqual(restore(undefined), undefined);
   });
 });
 
