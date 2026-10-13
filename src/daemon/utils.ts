@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import {execFileSync} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -93,13 +94,50 @@ export function getDaemonPid(sessionId: string): number | null {
   }
 }
 
+function getProcessCommandLine(pid: number): string {
+  if (process.platform === 'linux' && fs.existsSync('/proc')) {
+    return fs
+      .readFileSync(`/proc/${pid}/cmdline`, 'utf-8')
+      .replaceAll('\0', ' ');
+  }
+  if (IS_WINDOWS) {
+    return execFileSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}").CommandLine`,
+      ],
+      {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        windowsHide: true,
+      },
+    );
+  }
+  return execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+}
+
+function isDaemonProcess(pid: number): boolean {
+  try {
+    const commandLine = getProcessCommandLine(pid);
+    return /[\\/]daemon[\\/]daemon\.js/.test(commandLine);
+  } catch {
+    return false;
+  }
+}
+
 export function isDaemonRunning(sessionId: string): boolean {
   assertValidSessionId(sessionId);
   const pid = getDaemonPid(sessionId);
   if (pid) {
     try {
       process.kill(pid, 0); // Throws if process doesn't exist
-      return true;
+      return isDaemonProcess(pid);
     } catch {
       // Process is dead, stale PID file. Proceed with startup.
     }

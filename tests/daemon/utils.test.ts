@@ -15,6 +15,7 @@ import {afterEach, beforeEach, describe, it} from 'node:test';
 
 import type {ParsedArguments} from '../../src/config/ConfigParser.js';
 import {
+  DAEMON_SCRIPT_PATH,
   serializeArgs,
   assertValidSessionId,
   getSocketPath,
@@ -342,11 +343,29 @@ describe('daemon pid handling', () => {
       assert.strictEqual(isDaemonRunning(SESSION_ID), false);
     });
 
-    it('returns true when the pid file points to a live process', () => {
+    it('returns true when the pid file points to a live daemon process', () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
+      const child = spawn(
+        process.execPath,
+        ['-e', 'setInterval(() => {}, 1000)', DAEMON_SCRIPT_PATH],
+        {stdio: 'ignore'},
+      );
+      child.unref();
+      assert.ok(child.pid);
+      try {
+        writePidFile(SESSION_ID, `${child.pid}\n`);
+        assert.strictEqual(isDaemonRunning(SESSION_ID), true);
+      } finally {
+        child.kill();
+      }
+    });
+
+    it('returns false when the pid file points to an unrelated live process', () => {
       using tempDir = createTempDir('cdm-daemon-utils-test-');
       process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       writePidFile(SESSION_ID, `${process.pid}\n`);
-      assert.strictEqual(isDaemonRunning(SESSION_ID), true);
+      assert.strictEqual(isDaemonRunning(SESSION_ID), false);
     });
 
     it('returns false when the pid file points to a dead process', async () => {
