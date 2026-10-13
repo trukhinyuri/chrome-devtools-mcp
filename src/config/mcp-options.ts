@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {getCategoryOptions} from './category-options.js';
-import {getBrowserOptions} from './browser-options.js';
+import {browserOptions, getBrowserOptions} from './browser-options.js';
 import {puppeteerOptions} from './puppeteer-options.js';
 import {toolOptions} from './tool-options.js';
 
@@ -364,3 +364,24 @@ export function withoutDefaults(
   }
   return result;
 }
+
+/**
+ * Options that are only read on startup. Changing them in a config file
+ * requires restarting the server to take full effect.
+ */
+export const RESTART_REQUIRED_OPTIONS: ReadonlyArray<keyof typeof mcpOptions> =
+  [
+    // Used to launch or connect to the browser.
+    ...(Object.keys(browserOptions) as Array<keyof typeof browserOptions>),
+    // Applied through Puppeteer when launching or connecting to the browser.
+    ...(Object.keys(puppeteerOptions) as Array<keyof typeof puppeteerOptions>),
+    'categoryExtensions',
+    // Process-wide settings.
+    'logFile',
+    'usageStatistics',
+    'clearcutEndpoint',
+    'clearcutForceFlushIntervalMs',
+    'clearcutIncludePidHeader',
+    'viaCli',
+    'config',
+  ];

@@ -18,6 +18,7 @@ import {
   CONFLICTING_ARGS,
   IMPLICATIONS,
   DEFAULT_FILESYSTEM_ROOT,
+  RESTART_REQUIRED_OPTIONS,
   withoutDefaults,
 } from './mcp-options.js';
 import {ConfigLocator} from './ConfigLocator.js';
@@ -43,19 +44,24 @@ export type ParsedArguments = InferredOptionTypes<typeof mcpOptions>;
 
 export class ConfigParser {
   #configPath?: string;
+  #usageStatisticsNoticeShown = false;
   readonly configLocator: ConfigLocator;
 
-  /**
-   * @param configLocator Finds the config file when `--config` is not passed.
-   * Config file discovery is off without it, for example in tests.
-   */
   constructor(
     private version: string,
     private argv = process.argv,
     private env = process.env,
     private exitProcess = true,
+    configLocator?: ConfigLocator,
   ) {
-    this.configLocator = new ConfigLocator();
+    this.configLocator = configLocator ?? new ConfigLocator();
+  }
+
+  /**
+   * The config file resolved by the last `parse()` call, if any.
+   */
+  get configPath(): string | undefined {
+    return this.#configPath;
   }
 
   buildCliParser(
@@ -131,7 +137,7 @@ export class ConfigParser {
    * Step 4: rejects mutually exclusive inputs. Only explicit inputs are checked,
    * so defaults never conflict.
    */
-  validateConflicts(explicitArgs: Partial<ParsedArguments>): void {
+  static validateConflicts(explicitArgs: Partial<ParsedArguments>): void {
     const activeArgs = new Set<string>();
     for (const [key, val] of Object.entries(explicitArgs)) {
       if (val !== undefined && val !== false) {
@@ -149,7 +155,7 @@ export class ConfigParser {
     }
   }
 
-  validateImplications(explicitArgs: Partial<ParsedArguments>): void {
+  static validateImplications(explicitArgs: Partial<ParsedArguments>): void {
     for (const [key, implied] of IMPLICATIONS) {
       const isKeySet =
         explicitArgs[key] !== undefined && explicitArgs[key] !== false;
@@ -181,6 +187,9 @@ export class ConfigParser {
 
     for (const [key, option] of Object.entries(baseOptions)) {
       if (key === 'channel' && !launchesByChannel) {
+        continue;
+      }
+      if (key === 'filesystemRoot' && resolvedArgs.allowUnrestrictedPaths) {
         continue;
       }
       if (
@@ -219,9 +228,12 @@ export class ConfigParser {
     }
 
     if (this.env['CI'] || this.env['CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS']) {
-      console.error(
-        "turning off usage statistics. process.env['CI'] || process.env['CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS'] is set.",
-      );
+      if (!this.#usageStatisticsNoticeShown) {
+        this.#usageStatisticsNoticeShown = true;
+        console.error(
+          "turning off usage statistics. process.env['CI'] || process.env['CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS'] is set.",
+        );
+      }
       resolvedArgs.usageStatistics = false;
     }
 
@@ -241,7 +253,7 @@ export class ConfigParser {
   parse(): ParsedArguments {
     try {
       const cliArgs = this.parseCliArgs();
-      this.#configPath = cliArgs.config ?? this.configLocator?.locate(this.env);
+      this.#configPath = cliArgs.config ?? this.configLocator.locate(this.env);
       this.warnUnknownArgs(cliArgs);
       return this.#resolve(cliArgs);
     } catch (error) {
@@ -266,13 +278,29 @@ export class ConfigParser {
     const configPath = this.#configPath;
     const configFileArgs = configPath ? this.parseConfigFile(configPath) : {};
     // Step 3: merges the explicit inputs. The CLI wins over the config file.
-    const explicitArgs = {
+    const explicitArgs: Partial<ParsedArguments> = {
       ...configFileArgs,
       ...cliArgs,
       ...(configPath ? {config: configPath} : {}),
     };
-    this.validateConflicts(explicitArgs);
-    this.validateImplications(explicitArgs);
+    ConfigParser.validateConflicts(explicitArgs);
+    ConfigParser.validateImplications(explicitArgs);
     return this.applyDefaults(explicitArgs);
+  }
+  /**
+   * Returns the arguments a running server continues with: `previous` for
+   * RESTART_REQUIRED_OPTIONS and `next` for everything else.
+   */
+  static mergeReloadableOptions(
+    previous: ParsedArguments,
+    next: ParsedArguments,
+  ): ParsedArguments {
+    const merged = {...next};
+    for (const name of RESTART_REQUIRED_OPTIONS) {
+      (merged as Record<string, unknown>)[name] = previous[name];
+    }
+    ConfigParser.validateConflicts(merged);
+    ConfigParser.validateImplications(merged);
+    return merged;
   }
 }
