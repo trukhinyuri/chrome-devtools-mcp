@@ -59,6 +59,45 @@ describe('lighthouse', () => {
       });
     });
 
+    it('restores emulated device scale factor, screen size, and orientation after navigation audit', async () => {
+      server.addHtmlRoute('/emulation-test', html`<div>Emulation Test</div>`);
+
+      await withMcpContext(async (response, context, args) => {
+        const mcpPage = context.getSelectedMcpPage();
+        await mcpPage.pptrPage.goto(server.getRoute('/emulation-test'));
+
+        await mcpPage.emulate({
+          viewport: {
+            width: 400,
+            height: 600,
+            deviceScaleFactor: 2,
+            isMobile: true,
+            isLandscape: true,
+          },
+        });
+
+        await lighthouseAudit(args).handler(
+          {
+            params: {
+              mode: 'navigation',
+              device: 'desktop',
+            },
+            page: mcpPage,
+          },
+          response,
+          context,
+        );
+
+        const metrics = await mcpPage.pptrPage.evaluate(() => ({
+          dpr: window.devicePixelRatio,
+          orientation: screen.orientation?.type,
+        }));
+
+        assert.equal(metrics.dpr, 2);
+        assert.equal(metrics.orientation, 'landscape-primary');
+      });
+    });
+
     it('restores emulation', async () => {
       const {page, context, response, args} = createHandlerMocks();
       context.saveTemporaryFile.resolves({filepath: 'report.json'});

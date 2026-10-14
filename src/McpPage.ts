@@ -1067,6 +1067,25 @@ export class McpPage implements ContextPage {
 
   async restoreEmulation(): Promise<void> {
     const currentSetting = this.emulationSettings;
+    // Lighthouse navigation mode modifies device metrics via its own CDP session.
+    // Puppeteer caches its viewport state, so calling setViewport with the same settings
+    // would be a no-op unless the viewport is reset first.
+    if (currentSetting.viewport) {
+      await this.pptrPage.setViewport(null);
+    } else {
+      try {
+        // @ts-expect-error internal API
+        const client = this.pptrPage._client?.();
+        if (client) {
+          await client.send('Emulation.clearDeviceMetricsOverride');
+          await client.send('Emulation.setTouchEmulationEnabled', {
+            enabled: false,
+          });
+        }
+      } catch {
+        // Ignore if CDP session is unavailable or does not support override
+      }
+    }
     await this.emulate(currentSetting);
   }
 
