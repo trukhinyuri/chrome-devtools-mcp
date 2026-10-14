@@ -162,6 +162,7 @@ Example with arguments: \`(el) => el.innerText\`
           ? context.getPageById(request.params.pageId)
           : context.getSelectedMcpPage();
       await mcpPage.init();
+      mcpPage.throwIfDialogOpen();
       const page: Page = mcpPage.pptrPage;
 
       const args: Array<JSHandle<unknown>> = [];

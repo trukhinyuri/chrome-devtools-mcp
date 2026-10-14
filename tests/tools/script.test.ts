@@ -52,6 +52,31 @@ describe('script', () => {
         assert.strictEqual(JSON.parse(lineEvaluation), 10);
       });
     });
+    it('throws if a dialog is open', async () => {
+      await withMcpContext(async (response, context, args) => {
+        const mcpPage = context.getSelectedMcpPage();
+        await mcpPage.waitForEventsAfterAction(async () => {
+          await mcpPage.pptrPage.evaluate(() => {
+            setTimeout(() => alert('blocked!'), 0);
+          });
+        });
+        try {
+          await assert.rejects(
+            () =>
+              evaluateScript(args).handler(
+                {
+                  params: {function: '() => 1'},
+                },
+                response,
+                context,
+              ),
+            /A dialog is open/,
+          );
+        } finally {
+          await mcpPage.getDialog()?.dismiss();
+        }
+      });
+    });
     it('evaluates an inline classic script', async () => {
       await withMcpContext(async (response, context, args) => {
         await evaluateScript(args).handler(
