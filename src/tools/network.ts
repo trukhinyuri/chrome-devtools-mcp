@@ -10,7 +10,12 @@ import type {ResourceType} from '../third_party/index.js';
 import {ToolCategory} from './categories.js';
 import {definePageTool} from './ToolDefinition.js';
 
-const FILTERABLE_RESOURCE_TYPES: readonly [ResourceType, ...ResourceType[]] = [
+type FilterableResourceType = Exclude<ResourceType, 'websocket'>;
+
+const FILTERABLE_RESOURCE_TYPES: readonly [
+  FilterableResourceType,
+  ...FilterableResourceType[],
+] = [
   'document',
   'stylesheet',
   'image',
@@ -22,7 +27,6 @@ const FILTERABLE_RESOURCE_TYPES: readonly [ResourceType, ...ResourceType[]] = [
   'fetch',
   'prefetch',
   'eventsource',
-  'websocket',
   'manifest',
   'signedexchange',
   'ping',
