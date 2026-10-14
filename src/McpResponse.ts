@@ -39,7 +39,10 @@ import type {
 } from './processors/HeapSnapshotManager.js';
 import type {McpContext} from './McpContext.js';
 import type {McpPage} from './McpPage.js';
-import {UncaughtError} from './collectors/PageCollector.js';
+import {
+  BufferedConsoleMessage,
+  UncaughtError,
+} from './collectors/PageCollector.js';
 import {TextSnapshot} from './TextSnapshot.js';
 import {DevTools, getToonEncode, getGcfEncode} from './third_party/index.js';
 import type {
@@ -579,13 +582,16 @@ export class McpResponse implements Response {
     if (!this.#page) {
       throw new Error(`Response must have an McpPage`);
     }
-    const message = this.#page.getConsoleMessageById(
+    const message = await this.#page.getConsoleMessageById(
       this.#attachedConsoleMessageId,
     );
     const consoleMessageStableId = this.#attachedConsoleMessageId;
-    if ('args' in message || message instanceof UncaughtError) {
-      const consoleMessage = message as ConsoleMessage | UncaughtError;
-      return await ConsoleFormatter.from(consoleMessage, {
+    if (
+      message instanceof BufferedConsoleMessage ||
+      message instanceof UncaughtError ||
+      'args' in message
+    ) {
+      return await ConsoleFormatter.from(message, {
         id: consoleMessageStableId,
         fetchDetailedData: true,
         devTools: this.#page.devtoolsUniverse,
@@ -650,7 +656,7 @@ export class McpResponse implements Response {
       if (!page) {
         throw new Error(`Response must have an McpPage`);
       }
-      messages = page.getConsoleData(
+      messages = await page.getConsoleData(
         this.#consoleDataOptions.includePreservedMessages,
       );
     }
@@ -673,9 +679,12 @@ export class McpResponse implements Response {
         messages.map(
           async (item): Promise<ConsoleFormatter | IssueFormatter | null> => {
             const consoleMessageStableId = this.getConsoleMessageStableId(item);
-            if ('args' in item || item instanceof UncaughtError) {
-              const consoleMessage = item as ConsoleMessage | UncaughtError;
-              return await ConsoleFormatter.from(consoleMessage, {
+            if (
+              item instanceof BufferedConsoleMessage ||
+              item instanceof UncaughtError ||
+              'args' in item
+            ) {
+              return await ConsoleFormatter.from(item, {
                 id: consoleMessageStableId,
                 fetchDetailedData: false,
                 fetchStackTrace: this.#consoleDataOptions?.includeStackTraces,
@@ -828,7 +837,12 @@ export class McpResponse implements Response {
   }
 
   getConsoleMessageStableId(
-    message: ConsoleMessage | Error | DevTools.AggregatedIssue | UncaughtError,
+    message:
+      | ConsoleMessage
+      | BufferedConsoleMessage
+      | Error
+      | DevTools.AggregatedIssue
+      | UncaughtError,
   ): number {
     return (message as WithSymbolId<typeof message>)[stableIdSymbol] ?? -1;
   }

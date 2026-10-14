@@ -1143,7 +1143,7 @@ describe('McpContext', () => {
 
           await page.goto(url);
 
-          const messages = mcpPage.getConsoleData(true);
+          const messages = await mcpPage.getConsoleData(true);
           const hasContentScriptLog = messages.some(
             message =>
               'text' in message &&

@@ -12,6 +12,7 @@ import {
 import {
   ConsoleCollector,
   NetworkCollector,
+  type BufferedConsoleMessage,
   type ListenerMap,
   type UncaughtError,
 } from './collectors/PageCollector.js';
@@ -557,15 +558,41 @@ export class McpPage implements ContextPage {
     return devtoolsPage;
   }
 
-  getConsoleData(
+  // Both console reads wait for the collector's backfill, so a tool call
+  // right after attach cannot race the recovery of buffered messages. An
+  // open dialog pauses the renderer and thereby the backfill itself, so in
+  // that case return the live-collected data instead of stalling on it.
+  async #consoleBackfilled(): Promise<void> {
+    if (!this.#dialog) {
+      await this.consoleCollector.backfilled;
+    }
+  }
+
+  async getConsoleData(
     includePreservedMessages?: boolean,
-  ): Array<ConsoleMessage | Error | DevTools.AggregatedIssue | UncaughtError> {
+  ): Promise<
+    Array<
+      | ConsoleMessage
+      | BufferedConsoleMessage
+      | Error
+      | DevTools.AggregatedIssue
+      | UncaughtError
+    >
+  > {
+    await this.#consoleBackfilled();
     return this.consoleCollector.getData(includePreservedMessages);
   }
 
-  getConsoleMessageById(
+  async getConsoleMessageById(
     id: number,
-  ): ConsoleMessage | Error | DevTools.AggregatedIssue | UncaughtError {
+  ): Promise<
+    | ConsoleMessage
+    | BufferedConsoleMessage
+    | Error
+    | DevTools.AggregatedIssue
+    | UncaughtError
+  > {
+    await this.#consoleBackfilled();
     return this.consoleCollector.getById(id);
   }
 
