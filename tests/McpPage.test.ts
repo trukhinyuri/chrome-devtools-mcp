@@ -880,6 +880,88 @@ describe('McpPage', () => {
         assert.ok(element);
       });
     });
+
+    it('works with late-attached iframe content', async () => {
+      await withMcpContext(async (_response, context) => {
+        const mcpPage = context.getSelectedMcpPage();
+        const page = mcpPage.pptrPage;
+
+        await page.setContent(html`<h1>Top level</h1>`);
+
+        const waitPromise = mcpPage.waitForTextOnPage(
+          ['Hello late iframe'],
+          3000,
+        );
+
+        setTimeout(async () => {
+          await page.evaluate(() => {
+            const iframe = document.createElement('iframe');
+            iframe.srcdoc = '<p>Hello late iframe</p>';
+            document.body.appendChild(iframe);
+          });
+        }, 100);
+
+        const element = await waitPromise;
+        assert.ok(element);
+      });
+    });
+
+    it('times out when text does not match in late-attached iframe', async () => {
+      await withMcpContext(async (_response, context) => {
+        const mcpPage = context.getSelectedMcpPage();
+        const page = mcpPage.pptrPage;
+
+        await page.setContent(html`<h1>Top level</h1>`);
+
+        const waitPromise = mcpPage.waitForTextOnPage(['Missing text'], 500);
+
+        setTimeout(async () => {
+          await page.evaluate(() => {
+            const iframe = document.createElement('iframe');
+            iframe.srcdoc = '<p>Different text</p>';
+            document.body.appendChild(iframe);
+          });
+        }, 50);
+
+        await assert.rejects(waitPromise, (err: Error) => {
+          assert.strictEqual(err.name, 'TimeoutError');
+          return true;
+        });
+      });
+    });
+
+    it('works when matching text appears in a secondary late-attached iframe', async () => {
+      await withMcpContext(async (_response, context) => {
+        const mcpPage = context.getSelectedMcpPage();
+        const page = mcpPage.pptrPage;
+
+        await page.setContent(html`<h1>Top level</h1>`);
+
+        const waitPromise = mcpPage.waitForTextOnPage(
+          ['Second iframe text'],
+          3000,
+        );
+
+        setTimeout(async () => {
+          await page.evaluate(() => {
+            const iframe1 = document.createElement('iframe');
+            iframe1.srcdoc = '<p>First iframe text</p>';
+            document.body.appendChild(iframe1);
+          });
+        }, 50);
+
+        setTimeout(async () => {
+          await page.evaluate(() => {
+            const iframe2 = document.createElement('iframe');
+            iframe2.srcdoc = '<p>Second iframe text</p>';
+            document.body.appendChild(iframe2);
+          });
+        }, 150);
+
+        const element = await waitPromise;
+        assert.ok(element);
+      });
+    });
   });
 
   describe('DevToolsCommentBridge lifecycle', () => {

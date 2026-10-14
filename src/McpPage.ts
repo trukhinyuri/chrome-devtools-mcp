@@ -26,10 +26,12 @@ import {
   type Protocol,
   type Page,
   type Target,
+  type Frame,
   type ConsoleMessage,
   type HTTPRequest,
   DevTools,
   type JSONSchema7Definition,
+  TimeoutError,
 } from './third_party/index.js';
 import type {ToolGroups} from './tools/thirdPartyDeveloper.js';
 import type {
@@ -1240,22 +1242,89 @@ export class McpPage implements ContextPage {
   }
 
   waitForTextOnPage(text: string[], timeout?: number): Promise<Element> {
-    const frames = this.pptrPage.frames();
+    const page = this.pptrPage;
+    const effectiveTimeout = timeout === undefined ? 30000 : timeout;
+    const deadline = effectiveTimeout > 0 ? Date.now() + effectiveTimeout : 0;
+    const abortController = new AbortController();
 
-    let locator = this.#locatorClass.race(
-      frames.flatMap(frame =>
-        text.flatMap(value => [
+    return new Promise<Element>((resolve, reject) => {
+      let settled = false;
+      let timer: NodeJS.Timeout | undefined;
+
+      const cleanup = (): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer) {
+          clearTimeout(timer);
+        }
+        page.off('frameattached', onFrameAttached);
+        page.off('close', onClose);
+        abortController.abort();
+      };
+
+      const onClose = (): void => {
+        cleanup();
+        reject(new Error('Page was closed'));
+      };
+
+      if (effectiveTimeout > 0) {
+        timer = setTimeout(() => {
+          cleanup();
+          reject(
+            new TimeoutError(`Timed out after waiting ${effectiveTimeout}ms`),
+          );
+        }, effectiveTimeout);
+      }
+
+      const watchedFrames = new Set<Frame>();
+
+      const watchFrame = (frame: Frame): void => {
+        if (settled || watchedFrames.has(frame)) {
+          return;
+        }
+        watchedFrames.add(frame);
+
+        const locators = text.flatMap(value => [
           frame.locator(`aria/${value}`),
           frame.locator(`text/${value}`),
-        ]),
-      ),
-    );
+        ]);
+        if (locators.length === 0) {
+          return;
+        }
 
-    if (timeout) {
-      locator = locator.setTimeout(timeout);
-    }
+        let locator = this.#locatorClass.race(locators);
+        if (deadline > 0) {
+          const remaining = Math.max(1, deadline - Date.now());
+          locator = locator.setTimeout(remaining);
+        } else if (effectiveTimeout === 0) {
+          locator = locator.setTimeout(0);
+        }
 
-    return locator.wait();
+        locator.wait({signal: abortController.signal}).then(
+          (element: unknown) => {
+            cleanup();
+            resolve(element as Element);
+          },
+          () => {
+            // Ignore individual locator timeouts/aborts/errors.
+            // Other frames may still succeed or master timer will trigger timeout.
+          },
+        );
+      };
+
+      const onFrameAttached = (frame: Frame): void => {
+        watchFrame(frame);
+      };
+
+      page.on('frameattached', onFrameAttached);
+      page.on('close', onClose);
+
+      for (const frame of page.frames()) {
+        watchFrame(frame);
+      }
+    });
   }
 
   /**
