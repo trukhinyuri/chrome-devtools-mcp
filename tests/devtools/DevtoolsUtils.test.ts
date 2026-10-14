@@ -310,6 +310,41 @@ describe('SymbolizedError', () => {
       assert.strictEqual(error.message, 'Error: boom');
     });
 
+    it('appends exception description or value for unhandled promise rejections (#2959)', async () => {
+      const errorWithDesc = await SymbolizedError.fromDetails({
+        details: exceptionDetails({
+          text: 'Uncaught (in promise)',
+          exception: {
+            type: 'object',
+            subtype: 'error',
+            className: 'Error',
+            description:
+              'Error: reason-A\n    at foo (http://example.com/app.js:1:1)',
+          },
+        }),
+        targetId: '',
+      });
+      assert.strictEqual(
+        errorWithDesc.message,
+        'Uncaught (in promise) Error: reason-A',
+      );
+
+      const errorWithValue = await SymbolizedError.fromDetails({
+        details: exceptionDetails({
+          text: 'Uncaught (in promise)',
+          exception: {
+            type: 'string',
+            value: 'reason-B',
+          },
+        }),
+        targetId: '',
+      });
+      assert.strictEqual(
+        errorWithValue.message,
+        'Uncaught (in promise) reason-B',
+      );
+    });
+
     it('ignores url, line, column and raw stack trace for the message', async () => {
       const error = await SymbolizedError.fromDetails({
         details: exceptionDetails({

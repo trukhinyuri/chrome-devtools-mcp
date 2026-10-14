@@ -334,14 +334,25 @@ export class SymbolizedError {
   }
 
   static #getMessage(details: ExceptionDetailsLike): string {
-    // For Runtime.exceptionThrown with a present exception object, `details.text` will be "Uncaught" and
-    // we have to manually parse out the error text from the exception description.
+    // For Runtime.exceptionThrown with a present exception object, `details.text` will be "Uncaught" or
+    // "Uncaught (in promise)" and we have to manually parse out the error text from the exception description.
     // In the case of Runtime.getExceptionDetails, `details.text` has the Error.message.
-    if (details.text === 'Uncaught' && details.exception) {
-      return (
-        'Uncaught ' +
-        SymbolizedError.#getMessageFromException(details.exception)
+    if (
+      (details.text === 'Uncaught' ||
+        details.text === 'Uncaught (in promise)') &&
+      details.exception
+    ) {
+      let exceptionMessage = SymbolizedError.#getMessageFromException(
+        details.exception,
       );
+      if (
+        !exceptionMessage &&
+        details.exception.value !== undefined &&
+        details.text === 'Uncaught (in promise)'
+      ) {
+        exceptionMessage = String(details.exception.value);
+      }
+      return `${details.text} ${exceptionMessage}`;
     }
     return details.text;
   }
