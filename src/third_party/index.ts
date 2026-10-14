@@ -65,6 +65,7 @@ export {
   WebMCP,
   WebMCPTool,
 } from 'puppeteer-core';
+export {customQueryHandlers} from 'puppeteer-core/internal/common/CustomQueryHandler.js';
 export {default as puppeteer} from 'puppeteer-core';
 export type * from 'puppeteer-core';
 export {PipeTransport} from 'puppeteer-core/internal/node/PipeTransport.js';

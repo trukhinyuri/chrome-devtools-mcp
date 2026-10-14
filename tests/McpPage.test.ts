@@ -880,6 +880,50 @@ describe('McpPage', () => {
         assert.ok(element);
       });
     });
+
+    it('finds visible text with line breaks and repeated spaces', async () => {
+      await withMcpContext(async (_response, context) => {
+        const mcpPage = context.getSelectedMcpPage();
+        const page = mcpPage.pptrPage;
+
+        await page.setContent(
+          '<p>Multi   spaced    words</p>' +
+            '<p>Order\n    confirmed</p>' +
+            '<button>Place\n    order</button>',
+        );
+
+        const el1 = await mcpPage.waitForTextOnPage(
+          ['Multi spaced words'],
+          1000,
+        );
+        assert.ok(el1);
+
+        const el2 = await mcpPage.waitForTextOnPage(['Order confirmed'], 1000);
+        assert.ok(el2);
+
+        const el3 = await mcpPage.waitForTextOnPage(['Place order'], 1000);
+        assert.ok(el3);
+      });
+    });
+
+    it('times out when searching for text not on the page', async () => {
+      await withMcpContext(async (_response, context) => {
+        const mcpPage = context.getSelectedMcpPage();
+        const page = mcpPage.pptrPage;
+
+        await page.setContent(
+          html`<p>Multi spaced words</p> <p>Order confirmed</p>`,
+        );
+
+        await assert.rejects(
+          mcpPage.waitForTextOnPage(['Order cancelled'], 500),
+          (err: Error) => {
+            assert.strictEqual(err.name, 'TimeoutError');
+            return true;
+          },
+        );
+      });
+    });
   });
 
   describe('DevToolsCommentBridge lifecycle', () => {

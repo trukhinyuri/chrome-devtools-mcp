@@ -30,6 +30,7 @@ import {
   type HTTPRequest,
   DevTools,
   type JSONSchema7Definition,
+  customQueryHandlers,
 } from './third_party/index.js';
 import type {ToolGroups} from './tools/thirdPartyDeveloper.js';
 import type {
@@ -53,6 +54,127 @@ import {
   type WaitForEventsResult,
   type DialogAction,
 } from './utils/WaitForHelper.js';
+
+function registerNormalizedTextQueryHandler(): void {
+  if (customQueryHandlers.get('normalizedText')) {
+    return;
+  }
+  customQueryHandlers.register('normalizedText', {
+    queryOne: (node: Node, selector: string): Node | null => {
+      const normalize = (s: string | null | undefined): string =>
+        (s || '').replace(/\s+/g, ' ').trim();
+      const target = normalize(selector);
+      if (!target) {
+        return null;
+      }
+      let root: Node | null =
+        node.nodeType === 9
+          ? (node as Document).body || (node as Document).documentElement
+          : node;
+      if (
+        root &&
+        root.nodeName === 'HTML' &&
+        root.ownerDocument &&
+        root.ownerDocument.body
+      ) {
+        root = root.ownerDocument.body;
+      }
+      const walk = (n: Element | null): Element | null => {
+        if (!n || n.nodeType !== 1) {
+          return null;
+        }
+        const name = n.nodeName;
+        if (
+          name === 'SCRIPT' ||
+          name === 'STYLE' ||
+          name === 'NOSCRIPT' ||
+          name === 'TEMPLATE' ||
+          name === 'HEAD'
+        ) {
+          return null;
+        }
+        for (const child of Array.from(n.children)) {
+          const found = walk(child);
+          if (found) {
+            return found;
+          }
+        }
+        if (n.shadowRoot) {
+          for (const child of Array.from(n.shadowRoot.children)) {
+            const found = walk(child);
+            if (found) {
+              return found;
+            }
+          }
+        }
+        if (normalize(n.textContent).includes(target)) {
+          return n;
+        }
+        return null;
+      };
+      return walk(root as Element);
+    },
+    queryAll: (node: Node, selector: string): Iterable<Node> => {
+      const normalize = (s: string | null | undefined): string =>
+        (s || '').replace(/\s+/g, ' ').trim();
+      const target = normalize(selector);
+      if (!target) {
+        return [];
+      }
+      const results: Element[] = [];
+      let root: Node | null =
+        node.nodeType === 9
+          ? (node as Document).body || (node as Document).documentElement
+          : node;
+      if (
+        root &&
+        root.nodeName === 'HTML' &&
+        root.ownerDocument &&
+        root.ownerDocument.body
+      ) {
+        root = root.ownerDocument.body;
+      }
+      const walk = (n: Element | null): void => {
+        if (!n || n.nodeType !== 1) {
+          return;
+        }
+        const name = n.nodeName;
+        if (
+          name === 'SCRIPT' ||
+          name === 'STYLE' ||
+          name === 'NOSCRIPT' ||
+          name === 'TEMPLATE' ||
+          name === 'HEAD'
+        ) {
+          return;
+        }
+        let matchedChild = false;
+        for (const child of Array.from(n.children)) {
+          const countBefore = results.length;
+          walk(child);
+          if (results.length > countBefore) {
+            matchedChild = true;
+          }
+        }
+        if (n.shadowRoot) {
+          for (const child of Array.from(n.shadowRoot.children)) {
+            const countBefore = results.length;
+            walk(child);
+            if (results.length > countBefore) {
+              matchedChild = true;
+            }
+          }
+        }
+        if (!matchedChild && normalize(n.textContent).includes(target)) {
+          results.push(n);
+        }
+      };
+      walk(root as Element);
+      return results;
+    },
+  });
+}
+registerNormalizedTextQueryHandler();
 
 export function replaceHtmlElementsWithUids(
   schema: JSONSchema7Definition,
@@ -1247,6 +1369,7 @@ export class McpPage implements ContextPage {
         text.flatMap(value => [
           frame.locator(`aria/${value}`),
           frame.locator(`text/${value}`),
+          frame.locator(`normalizedText/${value}`),
         ]),
       ),
     );
