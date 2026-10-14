@@ -1147,7 +1147,9 @@ export class McpPage implements ContextPage {
     }
 
     if (!options.geolocation) {
-      await page.setGeolocation({latitude: 0, longitude: 0});
+      // @ts-expect-error internal API
+      const client = page._client();
+      await client.send('Emulation.clearGeolocationOverride');
       delete newSettings.geolocation;
     } else {
       await page.setGeolocation(options.geolocation);
