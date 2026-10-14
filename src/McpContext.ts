@@ -20,6 +20,7 @@ import type {
   HeapQueryOptions,
 } from './processors/HeapSnapshotManager.js';
 import {McpPage} from './McpPage.js';
+import {NetworkEventBuffer} from './NetworkEventBuffer.js';
 import {type UncaughtError} from './collectors/PageCollector.js';
 import {ServiceWorkerConsoleCollector} from './collectors/ServiceWorkerCollector.js';
 import {
@@ -104,6 +105,7 @@ export class McpContext implements Context {
   #selectedPageFallback?: {wasClosed: boolean};
 
   #serviceWorkerConsoleCollector: ServiceWorkerConsoleCollector;
+  #networkEventBuffer: NetworkEventBuffer;
 
   #isRunningTrace = false;
   #screenRecorderData: {recorder: ScreenRecorder; filePath: string} | null =
@@ -141,6 +143,7 @@ export class McpContext implements Context {
     this.#serviceWorkerConsoleCollector = new ServiceWorkerConsoleCollector(
       this.browser,
     );
+    this.#networkEventBuffer = new NetworkEventBuffer(this.browser);
   }
 
   async #init(): Promise<void> {
@@ -157,6 +160,7 @@ export class McpContext implements Context {
     this.browser.off('targetdestroyed', this.#onTargetDestroyed);
 
     this.#serviceWorkerConsoleCollector.dispose();
+    this.#networkEventBuffer.dispose();
     this.#heapSnapshotManager.dispose();
     for (const mcpPage of this.#mcpPages.values()) {
       mcpPage.dispose();
@@ -584,6 +588,7 @@ export class McpContext implements Context {
         navigationTimeout: this.#options.navigationTimeout,
         sourceMaps: this.#options.sourceMaps,
         onNotification: this.#options.onNotification,
+        networkEventBuffer: this.#networkEventBuffer,
       });
     }
     this.#mcpPages.set(target, mcpPage);

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import assert from 'node:assert';
 import {afterEach, describe, it} from 'node:test';
 
 import sinon from 'sinon';
@@ -13,13 +14,73 @@ import {
   listNetworkRequests,
 } from '../../src/tools/network.js';
 import {createHandlerMocks} from '../mocks.js';
+import {serverHooks} from '../server.js';
+import {getTextContent, html, withMcpContext} from '../utils.js';
 
 describe('network', () => {
+  const server = serverHooks();
+
   afterEach(() => {
     sinon.restore();
   });
 
   describe('list_network_requests', () => {
+    it('lists the initial navigation request of pages opened via window.open', async () => {
+      server.addHtmlRoute('/opener', html`<main>Opener</main>`);
+      server.addRoute('/popup-redirect', (_req, res) => {
+        // Delay the redirect a bit so that the redirect chain is still in
+        // flight while the popup's McpPage is being wired up.
+        setTimeout(() => {
+          res.writeHead(302, {
+            Location: server.getRoute('/popup'),
+          });
+          res.end();
+        }, 250);
+      });
+      server.addHtmlRoute('/popup', html`<main>Popup</main>`);
+
+      await withMcpContext(async (response, context, args) => {
+        const openerPage = context.getSelectedMcpPage().pptrPage;
+        await openerPage.goto(server.getRoute('/opener'));
+
+        await openerPage.evaluate(url => {
+          window.open(url, '_blank');
+        }, server.getRoute('/popup-redirect'));
+
+        // The popup's McpPage is created asynchronously via targetcreated.
+        const popupUrl = server.getRoute('/popup');
+        const deadline = Date.now() + 10_000;
+        let popupMcpPage;
+        while (!popupMcpPage && Date.now() < deadline) {
+          popupMcpPage = context
+            .getPages()
+            .find(page => page.target.url() === popupUrl);
+          if (!popupMcpPage) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+        }
+        assert.ok(popupMcpPage, 'Popup page was not reported');
+
+        await popupMcpPage.init();
+        context.selectPage(popupMcpPage);
+        response.setPage(popupMcpPage);
+        await listNetworkRequests(args).handler(
+          {params: {}, page: popupMcpPage},
+          response,
+          context,
+        );
+        const responseData = await response.handle(context);
+        const text = getTextContent(responseData.content[0]);
+        assert.ok(
+          text.includes(server.getRoute('/popup-redirect')),
+          `Expected the popup's initial navigation request to be listed:\n${text}`,
+        );
+        assert.ok(
+          text.includes(popupUrl),
+          `Expected the popup's redirect target to be listed:\n${text}`,
+        );
+      });
+    });
     it('handles default parameters', async () => {
       const {page, context, response, args} = createHandlerMocks();
       page.getDevToolsData.resolves({});

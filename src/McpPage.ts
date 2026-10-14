@@ -16,6 +16,7 @@ import {
   type UncaughtError,
 } from './collectors/PageCollector.js';
 import {TextSnapshot} from './TextSnapshot.js';
+import type {NetworkEventBuffer} from './NetworkEventBuffer.js';
 import {
   type Locator,
   PredefinedNetworkConditions,
@@ -168,6 +169,7 @@ export class McpPage implements ContextPage {
   #sourceMaps: boolean;
   #commentBridge?: DevToolsCommentBridge;
   #onNotification?: (message: string) => void;
+  #networkEventBuffer?: NetworkEventBuffer;
 
   constructor(
     target: Target,
@@ -179,6 +181,7 @@ export class McpPage implements ContextPage {
       navigationTimeout?: number;
       sourceMaps?: boolean;
       onNotification?: (message: string) => void;
+      networkEventBuffer?: NetworkEventBuffer;
     },
   ) {
     this.#hasNetworkBlockOrAllowlist = options.hasNetworkBlockOrAllowlist;
@@ -186,6 +189,7 @@ export class McpPage implements ContextPage {
     this.#navigationTimeout = options.navigationTimeout ?? NAVIGATION_TIMEOUT;
     this.#sourceMaps = options.sourceMaps ?? true;
     this.#onNotification = options.onNotification;
+    this.#networkEventBuffer = options.networkEventBuffer;
     this.target = target;
     this.id = id;
     this.isolatedContextName = options.isolatedContextName;
@@ -285,6 +289,7 @@ export class McpPage implements ContextPage {
       this.#pptrPage = page;
       page.on('dialog', this.#dialogHandler);
       this.#networkCollector = new NetworkCollector(page);
+      this.#networkEventBuffer?.flush(page);
       this.#consoleCollector = new ConsoleCollector(page, collect => {
         return {
           console: event => {
