@@ -1211,28 +1211,33 @@ export class McpPage implements ContextPage {
       }
     }
 
+    this.updateTimeouts(newSettings);
+
+    try {
+      // This should happen after updating the page timeouts.
+      // Setting the viewport can trigger a reload which we don't want to timeout.
+      await page.setViewport(newSettings.viewport ?? null);
+    } catch (err) {
+      this.updateTimeouts();
+      throw err;
+    }
+
     this.emulationSettings = Object.keys(newSettings).length ? newSettings : {};
-
-    this.updateTimeouts();
-
-    // This should happen after updating the page timeouts.
-    // Setting the viewport can trigger a reload which we don't want to timeout.
-    await page.setViewport(newSettings.viewport ?? null);
   }
 
-  updateTimeouts(): void {
+  updateTimeouts(settings: EmulationSettings = this.emulationSettings): void {
     if (!this.#pptrPage) {
       return;
     }
     // For waiters 5sec timeout should be sufficient.
     // Increased in case we throttle the CPU
-    const cpuMultiplier = this.cpuThrottlingRate;
+    const cpuMultiplier = settings.cpuThrottlingRate ?? 1;
     this.#pptrPage.setDefaultTimeout(DEFAULT_TIMEOUT * cpuMultiplier);
     // 10sec should be enough for the load event to be emitted during
     // navigations.
     // Increased in case we throttle the network requests or the CPU
     const networkMultiplier = getNetworkMultiplierFromString(
-      this.networkConditions,
+      settings.networkConditions ?? null,
     );
     this.#pptrPage.setDefaultNavigationTimeout(
       this.#navigationTimeout * networkMultiplier * cpuMultiplier,

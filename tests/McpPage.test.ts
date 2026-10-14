@@ -644,6 +644,49 @@ describe('McpPage', () => {
       sinon.assert.calledWithExactly(pptrPage.setViewport.secondCall, null);
     });
 
+    it('does not store viewport in emulationSettings if setViewport fails', async () => {
+      const {mcpPage, pptrPage} = await createMcpPage();
+      pptrPage.setViewport.rejects(
+        new Error(
+          'Protocol error (Emulation.setDeviceMetricsOverride): Width and height values must be positive, not greater than 10000000',
+        ),
+      );
+      await assert.rejects(
+        mcpPage.emulate({
+          viewport: {
+            width: 20000000,
+            height: 600,
+          },
+        }),
+      );
+      assert.strictEqual(mcpPage.viewport, null);
+    });
+
+    it('preserves previous viewport in emulationSettings if setViewport fails', async () => {
+      const {mcpPage, pptrPage} = await createMcpPage();
+      await mcpPage.emulate({
+        viewport: {
+          width: 800,
+          height: 600,
+        },
+      });
+      assert.strictEqual(mcpPage.viewport?.width, 800);
+      pptrPage.setViewport.rejects(
+        new Error(
+          'Protocol error (Emulation.setDeviceMetricsOverride): Invalid parameters',
+        ),
+      );
+      await assert.rejects(
+        mcpPage.emulate({
+          viewport: {
+            width: 800.5,
+            height: 600,
+          },
+        }),
+      );
+      assert.strictEqual(mcpPage.viewport?.width, 800);
+    });
+
     it('calls setExtraHTTPHeaders with the given headers', async () => {
       const {mcpPage, pptrPage} = await createMcpPage();
       await mcpPage.emulate({
