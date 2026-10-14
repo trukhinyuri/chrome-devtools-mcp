@@ -239,7 +239,16 @@ export class WaitForHelper {
       });
 
     try {
-      await action(this.#abortController.signal);
+      const actionResult = await action(this.#abortController.signal);
+      if (
+        actionResult &&
+        typeof actionResult === 'object' &&
+        'actionFailed' in actionResult &&
+        actionResult.actionFailed
+      ) {
+        this.#abortController.abort();
+        return this.#getResult();
+      }
     } catch (error) {
       // Clear up pending promises
       this.#abortController.abort();

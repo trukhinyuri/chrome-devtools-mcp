@@ -23,6 +23,7 @@ import {
   getTabId,
 } from '../../src/tools/pages.js';
 import {createMockParsedArguments} from '../mocks.js';
+import {serverHooks} from '../server.js';
 import {assertNoServiceWorkerReported, html, withMcpContext} from '../utils.js';
 
 const EXTENSION_SW_PATH = path.join(
@@ -876,6 +877,7 @@ describe('pages', () => {
     });
   });
   describe('navigate_page', () => {
+    const server = serverHooks();
     it('navigates to correct page', async () => {
       await withMcpContext(async (response, context, args) => {
         await navigatePage(args).handler(
@@ -988,6 +990,39 @@ describe('pages', () => {
           waitForEventsSpy.firstCall.args[1]?.timeout,
           12345,
           'The timeout parameter should be passed to waitForEventsAfterAction',
+        );
+      });
+    });
+    it('returns promptly after timeout when the server does not respond', async () => {
+      server.addRoute('/hang-timeout', () => {
+        // Never respond
+      });
+
+      await withMcpContext(async (response, context, args) => {
+        const hangUrl = server.getRoute('/hang-timeout');
+        const startTime = Date.now();
+        await navigatePage(args).handler(
+          {
+            params: {
+              url: hangUrl,
+              timeout: 1000,
+            },
+            page: context.getSelectedMcpPage(),
+          },
+          response,
+          context,
+        );
+        const elapsed = Date.now() - startTime;
+
+        assert.ok(
+          response.responseLines
+            .at(0)
+            ?.includes('Navigation timeout of 1000 ms exceeded'),
+          `Expected response to contain timeout error, got: ${response.responseLines.join('\n')}`,
+        );
+        assert.ok(
+          elapsed < 2500,
+          `Expected navigate_page with timeout 1000ms to return within 2500ms, took ${elapsed}ms`,
         );
       });
     });

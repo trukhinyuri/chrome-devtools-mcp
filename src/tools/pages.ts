@@ -244,6 +244,7 @@ export const navigatePage = definePageTool((args: ParsedArguments) => {
                   response.appendResponseLine(
                     `Unable to navigate in the selected page: ${error.message}.`,
                   );
+                  return {actionFailed: true};
                 }
                 break;
               case 'back':
@@ -256,6 +257,7 @@ export const navigatePage = definePageTool((args: ParsedArguments) => {
                   response.appendResponseLine(
                     `Unable to navigate back in the selected page: ${error.message}.`,
                   );
+                  return {actionFailed: true};
                 }
                 break;
               case 'forward':
@@ -268,6 +270,7 @@ export const navigatePage = definePageTool((args: ParsedArguments) => {
                   response.appendResponseLine(
                     `Unable to navigate forward in the selected page: ${error.message}.`,
                   );
+                  return {actionFailed: true};
                 }
                 break;
               case 'reload':
@@ -283,9 +286,11 @@ export const navigatePage = definePageTool((args: ParsedArguments) => {
                   response.appendResponseLine(
                     `Unable to reload the selected page: ${error.message}.`,
                   );
+                  return {actionFailed: true};
                 }
                 break;
             }
+            return undefined;
           },
           {
             timeout: request.params.timeout,
