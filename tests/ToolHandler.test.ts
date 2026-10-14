@@ -1423,6 +1423,61 @@ describe('ToolHandler', () => {
     }
   });
 
+  it('respects params.timeout when larger than TOOL_CALL_TIMEOUT_MS', async () => {
+    let resolved = false;
+    const tool: ToolDefinition = {
+      name: 'long_timeout_tool',
+      description: 'A tool with a long timeout',
+      annotations: {
+        category: ToolCategory.NAVIGATION,
+        readOnlyHint: true,
+      },
+      schema: {
+        timeout: zod.number().optional(),
+      },
+      blockedByDialog: false,
+      verifyFilesSchema: {},
+      handler: async () => {
+        await new Promise(resolve => setTimeout(resolve, 80_000));
+        resolved = true;
+      },
+    };
+
+    const mockContext = sinon.createStubInstance(McpContext);
+    const mockProcess = sinon.createStubInstance(ChildProcess);
+    mockContext.browser = getMockBrowser({process: mockProcess});
+    const forgetBrowserSpy = sinon.spy();
+
+    const toolMutex = new Mutex();
+    const serverArgs = new ConfigParser('1.0.0', ['node', 'script.js'], {
+      CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true',
+    }).parse();
+
+    const toolHandler = new ToolHandler(
+      tool,
+      serverArgs,
+      async () => mockContext,
+      toolMutex,
+      forgetBrowserSpy,
+      sinon.spy(),
+    );
+
+    const clock = sinon.useFakeTimers();
+    try {
+      const resultPromise = toolHandler.handle({timeout: 80_000});
+      await clock.tickAsync(TOOL_CALL_TIMEOUT_MS);
+      sinon.assert.notCalled(forgetBrowserSpy);
+
+      await clock.tickAsync(20_000);
+      const result = await resultPromise;
+      assert.strictEqual(resolved, true);
+      assert.strictEqual(result.isError, undefined);
+      sinon.assert.notCalled(forgetBrowserSpy);
+    } finally {
+      clock.restore();
+    }
+  });
+
   it('times out when response.handle() hangs, even if the tool handler resolves fast', async () => {
     const tool: ToolDefinition = {
       name: 'fast_handler_slow_response_tool',

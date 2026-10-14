@@ -212,13 +212,14 @@ export class ToolHandler {
   async #raceWithTimeout<T>(
     promise: Promise<T>,
     onTimeout: () => void,
+    timeoutMs = TOOL_CALL_TIMEOUT_MS,
   ): Promise<T> {
     const timeoutError = new ToolCallTimeoutError(
-      `Tool "${this.tool.name}" timed out after ${TOOL_CALL_TIMEOUT_MS}ms waiting on the browser connection. The connection may have been lost (for example, the debugged browser or app restarted). It will be re-established automatically on the next tool call.`,
+      `Tool "${this.tool.name}" timed out after ${timeoutMs}ms waiting on the browser connection. The connection may have been lost (for example, the debugged browser or app restarted). It will be re-established automatically on the next tool call.`,
     );
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(timeoutError), TOOL_CALL_TIMEOUT_MS);
+      timer = setTimeout(() => reject(timeoutError), timeoutMs);
       timer.unref?.();
     });
     try {
@@ -280,6 +281,10 @@ export class ToolHandler {
       // covering too. The closure below isn't cancelled on timeout — it
       // keeps running abandoned — but nothing after this point observes its
       // result.
+      const timeoutMs =
+        typeof params.timeout === 'number' && params.timeout > 0
+          ? Math.max(TOOL_CALL_TIMEOUT_MS, params.timeout + 5000)
+          : TOOL_CALL_TIMEOUT_MS;
       const {content, structuredContent} = await this.#raceWithTimeout(
         (async () => {
           let page: McpPage | undefined;
@@ -329,6 +334,7 @@ export class ToolHandler {
           return await response.handle(context, dataFormat);
         })(),
         () => this.forgetBrowserOnTimeout(context.browser),
+        timeoutMs,
       );
       const result: CallToolResult & {
         structuredContent?: Record<string, unknown>;
