@@ -1170,6 +1170,28 @@ describe('McpPage', () => {
       );
     });
 
+    it('throws cannot be referenced error for nodes without backendNodeId (#2960)', async () => {
+      const {mcpPage} = await createMcpPage();
+      const node: TextSnapshotNode = {
+        id: '1_5',
+        role: 'InlineTextBox',
+        children: [],
+        elementHandle: async () => null,
+      };
+      const idToNode = new Map<string, TextSnapshotNode>([['1_5', node]]);
+      mcpPage.textSnapshot = new TextSnapshot({
+        root: node,
+        idToNode,
+        snapshotId: '1',
+        hasSelectedElement: false,
+        verbose: true,
+      });
+      await assert.rejects(
+        () => mcpPage.getElementByUid('1_5'),
+        /Element with uid 1_5 cannot be referenced\./,
+      );
+    });
+
     it('retrieves matched styles across elements, shadow roots, and iframes', async () => {
       server.addHtmlRoute(
         '/iframe_content.html',

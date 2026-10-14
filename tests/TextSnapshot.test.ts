@@ -10,8 +10,10 @@ import {afterEach, describe, it} from 'node:test';
 import sinon from 'sinon';
 
 import {TextSnapshot} from '../src/TextSnapshot.js';
+import {SnapshotFormatter} from '../src/formatters/SnapshotFormatter.js';
 import type {TextSnapshotNode} from '../src/types.js';
 
+import {createMockMcpPage} from './mocks.js';
 import {html, withMcpContext} from './utils.js';
 
 describe('TextSnapshot', () => {
@@ -171,5 +173,111 @@ describe('TextSnapshot', () => {
         'Middle node should be in parent children',
       );
     });
+  });
+
+  it('assigns unique ids to InlineTextBox nodes and does not share ids across nodes without backendNodeId (#2960)', async () => {
+    const page = createMockMcpPage();
+    page.uniqueBackendNodeIdToMcpId = new Map<string, string>();
+    page.extraHandles = [];
+    page.getDevToolsData.resolves(undefined);
+
+    interface MockAXNode {
+      role: string;
+      name?: string;
+      backendNodeId?: number;
+      loaderId?: string;
+      children: MockAXNode[];
+      elementHandle: () => Promise<null>;
+    }
+
+    const mockRootNode: MockAXNode = {
+      role: 'RootWebArea',
+      name: 'text',
+      backendNodeId: 10,
+      loaderId: 'loader1',
+      elementHandle: async () => null,
+      children: [
+        {
+          role: 'paragraph',
+          backendNodeId: 11,
+          loaderId: 'loader1',
+          elementHandle: async () => null,
+          children: [
+            {
+              role: 'StaticText',
+              name: 'alpha',
+              backendNodeId: 12,
+              loaderId: 'loader1',
+              elementHandle: async () => null,
+              children: [
+                {
+                  role: 'InlineTextBox',
+                  name: 'alpha',
+                  loaderId: 'loader1',
+                  elementHandle: async () => null,
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          role: 'paragraph',
+          backendNodeId: 13,
+          loaderId: 'loader1',
+          elementHandle: async () => null,
+          children: [
+            {
+              role: 'StaticText',
+              name: 'beta',
+              backendNodeId: 14,
+              loaderId: 'loader1',
+              elementHandle: async () => null,
+              children: [
+                {
+                  role: 'InlineTextBox',
+                  name: 'beta',
+                  loaderId: 'loader1',
+                  elementHandle: async () => null,
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const snapshotStub = sinon.stub().resolves(mockRootNode);
+    Object.defineProperty(page.pptrPage, 'accessibility', {
+      value: {snapshot: snapshotStub},
+      writable: true,
+      configurable: true,
+    });
+
+    const snapshot = await TextSnapshot.create(page, {verbose: true});
+    assert.ok(snapshot);
+
+    const inlineNodes: TextSnapshotNode[] = [];
+    for (const node of snapshot.idToNode.values()) {
+      if (node.role === 'InlineTextBox') {
+        inlineNodes.push(node);
+      }
+    }
+    assert.strictEqual(inlineNodes.length, 2);
+    assert.notStrictEqual(
+      inlineNodes[0]?.id,
+      inlineNodes[1]?.id,
+      'InlineTextBox nodes should not share the same id',
+    );
+
+    const formatted = new SnapshotFormatter(snapshot).toString();
+    const uidMatches = formatted.match(/uid=(\S+)/g) ?? [];
+    const uniqueUids = new Set(uidMatches);
+    assert.strictEqual(
+      uidMatches.length,
+      uniqueUids.size,
+      'Every uid in snapshot should appear exactly once',
+    );
   });
 });

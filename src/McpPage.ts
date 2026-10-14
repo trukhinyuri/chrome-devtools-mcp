@@ -904,6 +904,9 @@ export class McpPage implements ContextPage {
     node: TextSnapshotNode,
     uid: string,
   ): Promise<ElementHandle<Element>> {
+    if (node.backendNodeId === undefined) {
+      throw new Error(`Element with uid ${uid} cannot be referenced.`);
+    }
     const message = `Element with uid ${uid} no longer exists on the page.`;
     try {
       const handle = await node.elementHandle();
@@ -912,6 +915,12 @@ export class McpPage implements ContextPage {
       }
       return handle;
     } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('cannot be referenced')
+      ) {
+        throw error;
+      }
       throw new Error(message, {
         cause: error,
       });
