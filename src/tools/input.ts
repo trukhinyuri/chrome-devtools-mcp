@@ -341,6 +341,22 @@ async function fillFormElements(
             signal,
           );
         } else {
+          const isReadOnly = await raceWithSignal(
+            handle.evaluate(el => {
+              if (
+                el instanceof HTMLInputElement ||
+                el instanceof HTMLTextAreaElement
+              ) {
+                return el.readOnly || el.hasAttribute('readonly');
+              }
+              return el.getAttribute('aria-readonly') === 'true';
+            }),
+            signal,
+          );
+          if (isReadOnly) {
+            throw new Error('The element is read-only.');
+          }
+
           const isToggle = await raceWithSignal(
             handle.evaluate(el => {
               if (el instanceof HTMLInputElement) {
@@ -371,6 +387,24 @@ async function fillFormElements(
               .asLocator()
               .setTimeout(fillTimeout)
               .fill(value, {signal});
+
+            const updateError = await raceWithSignal(
+              handle.evaluate((el, expectedValue) => {
+                if (
+                  el instanceof HTMLInputElement ||
+                  el instanceof HTMLTextAreaElement
+                ) {
+                  if (el.value !== expectedValue) {
+                    return `The element value was not updated to "${expectedValue}". Current value: "${el.value}".`;
+                  }
+                }
+                return null;
+              }, value),
+              signal,
+            );
+            if (updateError) {
+              throw new Error(updateError);
+            }
           }
         }
         signal.throwIfAborted();

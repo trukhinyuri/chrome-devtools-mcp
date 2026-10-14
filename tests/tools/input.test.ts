@@ -816,6 +816,103 @@ describe('input', () => {
       });
     });
 
+    it('rejects filling a readonly input without erasing its value', async () => {
+      await withMcpContext(async (response, context, args) => {
+        const page = context.getSelectedMcpPage().pptrPage;
+        await page.setContent(
+          html`<input
+            readonly
+            value="fixed"
+          />`,
+        );
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
+        await assert.rejects(
+          () =>
+            fill(args).handler(
+              {
+                params: {
+                  uid: '1_1',
+                  value: 'changed',
+                },
+                page: context.getSelectedMcpPage(),
+              },
+              response,
+              context,
+            ),
+          {
+            message:
+              'Failed to interact with the element with uid 1_1. The element is read-only.',
+          },
+        );
+        const value = await page.evaluate(
+          () => document.querySelector('input')!.value,
+        );
+        assert.strictEqual(value, 'fixed');
+      });
+    });
+
+    it('rejects filling a date input with an invalid date value', async () => {
+      await withMcpContext(async (response, context, args) => {
+        const page = context.getSelectedMcpPage().pptrPage;
+        await page.setContent(
+          html`<input
+            type="date"
+            value="2020-01-01"
+          />`,
+        );
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
+        await assert.rejects(
+          () =>
+            fill(args).handler(
+              {
+                params: {
+                  uid: '1_1',
+                  value: 'next tuesday',
+                },
+                page: context.getSelectedMcpPage(),
+              },
+              response,
+              context,
+            ),
+          /The element value was not updated to "next tuesday"/,
+        );
+      });
+    });
+
+    it('rejects filling a number input with non-numeric text', async () => {
+      await withMcpContext(async (response, context, args) => {
+        const page = context.getSelectedMcpPage().pptrPage;
+        await page.setContent(
+          html`<input
+            type="number"
+            value="7"
+          />`,
+        );
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
+        await assert.rejects(
+          () =>
+            fill(args).handler(
+              {
+                params: {
+                  uid: '1_1',
+                  value: 'abc',
+                },
+                page: context.getSelectedMcpPage(),
+              },
+              response,
+              context,
+            ),
+          /The element value was not updated to "abc"/,
+        );
+      });
+    });
+
     it('types text', async () => {
       await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
