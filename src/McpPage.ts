@@ -161,6 +161,7 @@ export class McpPage implements ContextPage {
 
   #networkCollector?: NetworkCollector;
   #consoleCollector?: ConsoleCollector;
+  #crashed = false;
 
   #hasNetworkBlockOrAllowlist: boolean;
   #locatorClass: typeof Locator;
@@ -284,6 +285,9 @@ export class McpPage implements ContextPage {
       }
       this.#pptrPage = page;
       page.on('dialog', this.#dialogHandler);
+      page.on('error', () => {
+        this.#crashed = true;
+      });
       this.#networkCollector = new NetworkCollector(page);
       this.#consoleCollector = new ConsoleCollector(page, collect => {
         return {
@@ -322,12 +326,19 @@ export class McpPage implements ContextPage {
     }
     try {
       const session = await this.pptrPage.createCDPSession();
+      session.on('Inspector.targetCrashed', () => {
+        this.#crashed = true;
+      });
       this.#devtoolsUniverse = await createTargetUniverse(session, {
         sourceMaps: this.#sourceMaps,
       });
     } catch (e) {
       logger?.('Failed to initialize DevTools universe', e);
     }
+  }
+
+  get isCrashed(): boolean {
+    return this.#crashed;
   }
 
   get devtoolsUniverse(): TargetUniverse | undefined {

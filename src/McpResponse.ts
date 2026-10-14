@@ -533,6 +533,7 @@ export class McpResponse implements Response {
     this.#page.textSnapshot = await TextSnapshot.create(this.#page, {
       verbose: this.#snapshotParams.verbose,
       devtoolsData: this.#devToolsData,
+      timeout: this.#snapshotParams.timeout,
     });
     const formatter = new SnapshotFormatter(this.#page.textSnapshot);
     if (this.#snapshotParams.filePath) {

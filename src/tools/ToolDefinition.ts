@@ -132,6 +132,7 @@ export interface ImageContentData {
 export interface SnapshotParams {
   verbose?: boolean;
   filePath?: string;
+  timeout?: number;
 }
 
 export interface LighthouseData {
@@ -386,6 +387,7 @@ export type ContextPage = Readonly<{
   readonly pptrPage: Page;
   readonly cpuThrottlingRate: number;
   readonly networkConditions: string | null;
+  readonly isCrashed: boolean;
   init(): Promise<void>;
   getAXNodeByUid(uid: string): TextSnapshotNode | undefined;
   getElementByUid(uid: string): Promise<ElementHandle<Element>>;

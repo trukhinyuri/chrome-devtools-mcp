@@ -172,4 +172,28 @@ describe('TextSnapshot', () => {
       );
     });
   });
+
+  it('fails fast when the page has crashed', async () => {
+    await withMcpContext(async (_response, context) => {
+      const page = context.getSelectedMcpPage();
+      sinon.stub(page, 'isCrashed').get(() => true);
+      await assert.rejects(
+        () => TextSnapshot.create(page),
+        /Page has crashed or is unresponsive/,
+      );
+    });
+  });
+
+  it('fails with busy navigating or unresponsive on snapshot timeout', async () => {
+    await withMcpContext(async (_response, context) => {
+      const page = context.getSelectedMcpPage();
+      sinon
+        .stub(page.pptrPage.accessibility, 'snapshot')
+        .returns(new Promise(() => {}));
+      await assert.rejects(
+        () => TextSnapshot.create(page, {timeout: 50}),
+        /Page is busy navigating or unresponsive/,
+      );
+    });
+  });
 });

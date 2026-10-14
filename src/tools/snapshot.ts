@@ -32,6 +32,7 @@ in the DevTools Elements panel (if any).`,
       .describe(
         'The absolute path, or a path relative to the current working directory, to save the snapshot to instead of attaching it to the response.',
       ),
+    ...timeoutSchema,
   },
   blockedByDialog: true,
   verifyFilesSchema: {
@@ -41,6 +42,9 @@ in the DevTools Elements panel (if any).`,
     response.includeSnapshot({
       verbose: request.params.verbose ?? false,
       filePath: request.params.filePath,
+      ...(request.params.timeout !== undefined
+        ? {timeout: request.params.timeout}
+        : {}),
     });
   },
 }));

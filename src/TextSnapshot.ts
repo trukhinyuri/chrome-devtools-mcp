@@ -50,13 +50,52 @@ export class TextSnapshot {
       verbose?: boolean;
       devtoolsData?: DevToolsData;
       extraHandles?: ElementHandle[];
+      timeout?: number;
     } = {},
   ): Promise<TextSnapshot> {
+    if (page.isCrashed) {
+      throw new Error('Page has crashed or is unresponsive.');
+    }
+
     const verbose = options.verbose ?? false;
-    const rootNode = await page.pptrPage.accessibility.snapshot({
-      includeIframes: true,
-      interestingOnly: !verbose,
-    });
+    const timeoutMs = options.timeout ?? 5000;
+    let timer: NodeJS.Timeout | undefined;
+    const timeoutPromise =
+      timeoutMs > 0
+        ? new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              reject(
+                new Error(
+                  `Page is busy navigating or unresponsive. Snapshot timed out after ${timeoutMs}ms.`,
+                ),
+              );
+            }, timeoutMs);
+          })
+        : undefined;
+
+    let rootNode: SerializedAXNode | null;
+    try {
+      rootNode = timeoutPromise
+        ? await Promise.race([
+            page.pptrPage.accessibility.snapshot({
+              includeIframes: true,
+              interestingOnly: !verbose,
+            }),
+            timeoutPromise,
+          ])
+        : await page.pptrPage.accessibility.snapshot({
+            includeIframes: true,
+            interestingOnly: !verbose,
+          });
+    } catch (err) {
+      if (page.isCrashed) {
+        throw new Error('Page has crashed or is unresponsive.');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+
     if (!rootNode) {
       throw new Error('Failed to create accessibility snapshot');
     }

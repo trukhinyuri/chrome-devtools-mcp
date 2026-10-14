@@ -38,6 +38,20 @@ describe('snapshot', () => {
         filePath: 'custom/path.txt',
       });
     });
+
+    it('includes a snapshot with timeout parameter', async () => {
+      const {page, context, response, args} = createHandlerMocks();
+      await takeSnapshot(args).handler(
+        {params: {timeout: 3000}, page},
+        response,
+        context,
+      );
+      sinon.assert.calledOnceWithExactly(response.includeSnapshot, {
+        verbose: false,
+        filePath: undefined,
+        timeout: 3000,
+      });
+    });
   });
 
   describe('wait_for', () => {

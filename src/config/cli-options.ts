@@ -1686,6 +1686,13 @@ export const commands: Commands = {
           'The absolute path, or a path relative to the current working directory, to save the snapshot to instead of attaching it to the response.',
         required: false,
       },
+      timeout: {
+        name: 'timeout',
+        type: 'integer',
+        description:
+          'Maximum wait time in milliseconds. If set to 0, the default timeout will be used.',
+        required: false,
+      },
     },
   },
   trigger_extension_action: {

@@ -478,6 +478,7 @@ in the DevTools Elements panel (if any).
 
 - **pageId** (number) **(required)**: Targets a specific page by ID.
 - **filePath** (string) _(optional)_: The absolute path, or a path relative to the current working directory, to save the snapshot to instead of attaching it to the response.
+- **timeout** (integer) _(optional)_: Maximum wait time in milliseconds. If set to 0, the default timeout will be used.
 - **verbose** (boolean) _(optional)_: Whether to include all possible information available in the full a11y tree. Default is false.
 
 ---
