@@ -11,7 +11,7 @@ import {
 } from '../devtools/DevtoolsUtils.js';
 import {UncaughtError} from '../collectors/PageCollector.js';
 import * as DevTools from '../third_party/index.js';
-import type {ConsoleMessage} from '../third_party/index.js';
+import type {ConsoleMessage, JSHandle} from '../third_party/index.js';
 
 import type {IssueFormatter} from './IssueFormatter.js';
 
@@ -138,25 +138,11 @@ export class ConsoleFormatter {
       resolvedArgs = options.resolvedArgsForTesting;
     } else if (options.fetchDetailedData) {
       resolvedArgs = await Promise.all(
-        msg.args().map(async (arg, i) => {
-          try {
-            const remoteObject = arg.remoteObject();
-            if (
-              remoteObject.type === 'object' &&
-              remoteObject.subtype === 'error'
-            ) {
-              return await SymbolizedError.fromError({
-                devTools: options.devTools,
-                error: remoteObject,
-                // @ts-expect-error Internal ConsoleMessage API
-                targetId: msg._targetId(),
-              });
-            }
-            return await arg.jsonValue();
-          } catch {
-            return `<error: Argument ${i} is no longer available>`;
-          }
-        }),
+        msg
+          .args()
+          .map((arg, i) =>
+            resolveConsoleArg(arg, i, msg, {devTools: options.devTools}),
+          ),
       );
     }
 
@@ -470,4 +456,126 @@ function formatCause(
     `Caused by: ${cause.message}`,
     ...formatStackTraceInner(cause.stackTrace, cause.cause, formatter),
   ];
+}
+
+async function resolveConsoleArg(
+  arg: JSHandle,
+  i: number,
+  msg: ConsoleMessage,
+  options: {
+    devTools?: TargetUniverse;
+  },
+): Promise<unknown> {
+  try {
+    const remoteObject = arg.remoteObject();
+    if (remoteObject.type === 'object' && remoteObject.subtype === 'error') {
+      return await SymbolizedError.fromError({
+        devTools: options.devTools,
+        error: remoteObject,
+        // @ts-expect-error Internal ConsoleMessage API
+        targetId: msg._targetId(),
+      });
+    }
+
+    if ('value' in remoteObject) {
+      return remoteObject.value;
+    }
+    if (remoteObject.unserializableValue) {
+      return remoteObject.unserializableValue;
+    }
+    if (remoteObject.type === 'undefined') {
+      return undefined;
+    }
+    if (remoteObject.type === 'symbol') {
+      return remoteObject.description ?? 'Symbol()';
+    }
+
+    if (typeof arg.evaluate === 'function') {
+      try {
+        return await arg.evaluate(obj => {
+          try {
+            if (
+              typeof obj === 'string' ||
+              typeof obj === 'number' ||
+              typeof obj === 'boolean' ||
+              obj === null ||
+              obj === undefined ||
+              typeof obj === 'bigint'
+            ) {
+              return obj;
+            }
+            if (typeof obj === 'symbol') {
+              return obj.toString();
+            }
+            if (typeof obj === 'function') {
+              return obj.toString();
+            }
+            if (obj instanceof Date) {
+              return isNaN(obj.getTime()) ? obj.toString() : obj.toISOString();
+            }
+            if (typeof Map !== 'undefined' && obj instanceof Map) {
+              const entries = Array.from(obj.entries()).map(([k, v]) => {
+                const kStr =
+                  typeof k === 'object' && k !== null
+                    ? JSON.stringify(k)
+                    : String(k);
+                const vStr =
+                  typeof v === 'object' && v !== null
+                    ? JSON.stringify(v)
+                    : String(v);
+                return `${kStr} => ${vStr}`;
+              });
+              return `Map(${obj.size}) {${entries.join(', ')}}`;
+            }
+            if (typeof Set !== 'undefined' && obj instanceof Set) {
+              const values = Array.from(obj.values()).map(v => {
+                return typeof v === 'object' && v !== null
+                  ? JSON.stringify(v)
+                  : String(v);
+              });
+              return `Set(${obj.size}) {${values.join(', ')}}`;
+            }
+            if (typeof Node !== 'undefined' && obj instanceof Node) {
+              if (typeof Element !== 'undefined' && obj instanceof Element) {
+                const tagName = obj.tagName.toLowerCase();
+                const id = obj.id ? `#${obj.id}` : '';
+                const className =
+                  obj.className && typeof obj.className === 'string'
+                    ? `.${obj.className.trim().split(/\s+/).join('.')}`
+                    : '';
+                return `<${tagName}${id}${className}>`;
+              }
+              return `<${obj.nodeName.toLowerCase()}>`;
+            }
+
+            const seen = new WeakSet();
+            const json = JSON.stringify(obj, (key, value) => {
+              if (typeof value === 'object' && value !== null) {
+                if (seen.has(value)) {
+                  return '[Circular]';
+                }
+                seen.add(value);
+              }
+              if (typeof value === 'bigint') {
+                return value.toString() + 'n';
+              }
+              if (typeof value === 'symbol') {
+                return value.toString();
+              }
+              return value;
+            });
+            return json !== undefined ? JSON.parse(json) : String(obj);
+          } catch {
+            return String(obj);
+          }
+        });
+      } catch {
+        // Fall back to jsonValue if evaluate fails
+      }
+    }
+
+    return await arg.jsonValue();
+  } catch {
+    return `<error: Argument ${i} is no longer available>`;
+  }
 }

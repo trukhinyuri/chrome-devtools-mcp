@@ -401,6 +401,81 @@ describe('console', () => {
       });
     });
 
+    it('formats special and cyclic arguments in get_console_message', async () => {
+      await withMcpContext(async (response, context, args) => {
+        const page = context.getSelectedMcpPage();
+        await page.pptrPage.setContent(`
+          <script>
+            const cyc = {name: 'cyc'}; cyc.self = cyc;
+            console.log('cyclic', cyc);
+            console.log('sym', Symbol('s'));
+            console.log('map', new Map([[1, 2]]), new Set([3]));
+            console.log('date', new Date(0));
+            console.log('fn', function foo() {});
+            console.log('node', document.documentElement);
+            console.log('plain', {a: 1});
+          </script>
+        `);
+        await listConsoleMessages(args).handler(
+          {params: {}, page: context.getSelectedMcpPage()},
+          response,
+          context,
+        );
+        for (let i = 1; i <= 7; i++) {
+          const res = new McpResponse(args);
+          res.setPage(context.getSelectedMcpPage());
+          await getConsoleMessage(args).handler(
+            {params: {msgid: i}, page: context.getSelectedMcpPage()},
+            res,
+            context,
+          );
+          const formatted = await res.handle(context);
+          const text = getTextContent(formatted.content[0]);
+          assert.strictEqual(
+            text.includes('is no longer available'),
+            false,
+            `Message ${i} should not report argument as no longer available: ${text}`,
+          );
+          if (i === 1) {
+            assert.ok(
+              text.includes('"name":"cyc"') && text.includes('[Circular]'),
+              `Message 1 should contain cyclic content: ${text}`,
+            );
+          } else if (i === 2) {
+            assert.ok(
+              text.includes('Symbol(s)'),
+              `Message 2 should contain Symbol: ${text}`,
+            );
+          } else if (i === 3) {
+            assert.ok(
+              text.includes('1 => 2') && text.includes('3'),
+              `Message 3 should contain Map and Set content: ${text}`,
+            );
+          } else if (i === 4) {
+            assert.ok(
+              text.includes('1970-01-01'),
+              `Message 4 should contain date: ${text}`,
+            );
+          } else if (i === 5) {
+            assert.ok(
+              text.includes('foo'),
+              `Message 5 should contain function name: ${text}`,
+            );
+          } else if (i === 6) {
+            assert.ok(
+              text.includes('html'),
+              `Message 6 should contain html node: ${text}`,
+            );
+          } else if (i === 7) {
+            assert.ok(
+              text.includes('{"a":1}'),
+              `Message 7 should contain plain JSON: ${text}`,
+            );
+          }
+        }
+      });
+    });
+
     describe('issues type', () => {
       it('gets issue details with node id parsing', async t => {
         await withMcpContext(async (response, context, args) => {
