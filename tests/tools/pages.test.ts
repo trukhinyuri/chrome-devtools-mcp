@@ -1755,6 +1755,73 @@ describe('pages', () => {
         await Promise.all([eval1Promise, eval2Promise]);
       });
     });
+
+    it('reports dialog opened during page load without timeout on navigate_page', async () => {
+      await withMcpContext(async (response, context, args) => {
+        const page = context.getSelectedMcpPage();
+        await navigatePage(args).handler(
+          {
+            params: {
+              url: 'data:text/html,<!doctype html><script>alert("nav load alert")</script>',
+              timeout: 2000,
+            },
+            page,
+          },
+          response,
+          context,
+        );
+
+        const result = await response.handle(context);
+        const text = result.content.find(c => c.type === 'text')?.text ?? '';
+        assert.ok(
+          !text.includes('Unable to navigate in the selected page'),
+          `Did not expect navigation failure, got: ${text}`,
+        );
+        assert.ok(
+          text.includes('# Open dialog') && text.includes('nav load alert'),
+          `Expected open dialog in response, got: ${text}`,
+        );
+
+        // Can accept the pending dialog
+        await handleDialog(args).handler(
+          {params: {action: 'accept'}, page},
+          response,
+          context,
+        );
+        assert.strictEqual(page.getDialog(), undefined);
+      });
+    });
+
+    it('reports dialog opened during page load without timeout on new_page', async () => {
+      await withMcpContext(async (response, context, args) => {
+        await newPage(args).handler(
+          {
+            params: {
+              url: 'data:text/html,<!doctype html><script>alert("new page load alert")</script>',
+              timeout: 2000,
+            },
+          },
+          response,
+          context,
+        );
+
+        const result = await response.handle(context);
+        const text = result.content.find(c => c.type === 'text')?.text ?? '';
+        assert.ok(
+          text.includes('# Open dialog') &&
+            text.includes('new page load alert'),
+          `Expected open dialog in response, got: ${text}`,
+        );
+
+        const page = context.getSelectedMcpPage();
+        await handleDialog(args).handler(
+          {params: {action: 'accept'}, page},
+          response,
+          context,
+        );
+        assert.strictEqual(page.getDialog(), undefined);
+      });
+    });
   });
 
   describe('get_tab_id', () => {

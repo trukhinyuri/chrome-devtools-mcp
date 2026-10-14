@@ -99,6 +99,40 @@ export const closePage = defineTool(() => ({
   },
 }));
 
+async function navigateWithSignal(
+  navigationPromise: Promise<unknown>,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!signal) {
+    await navigationPromise;
+    return;
+  }
+  if (signal.aborted) {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = (): void => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    signal.addEventListener('abort', onAbort);
+    navigationPromise.then(
+      () => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      },
+      err => {
+        signal.removeEventListener('abort', onAbort);
+        if (signal.aborted) {
+          resolve();
+        } else {
+          reject(err);
+        }
+      },
+    );
+  });
+}
+
 export const newPage = defineTool((args: ParsedArguments) => {
   return {
     name: 'new_page',
@@ -140,13 +174,20 @@ export const newPage = defineTool((args: ParsedArguments) => {
       );
 
       await page.waitForEventsAfterAction(
-        async () => {
-          await page.pptrPage.goto(request.params.url, {
-            timeout: request.params.timeout,
-          });
+        async signal => {
+          await navigateWithSignal(
+            page.pptrPage.goto(request.params.url, {
+              timeout: request.params.timeout,
+            }),
+            signal,
+          );
         },
         {timeout: request.params.timeout},
       );
+
+      if (page.getDialog() && !page.getDialog()?.handled) {
+        (response as unknown as {setPage?(p: unknown): void}).setPage?.(page);
+      }
 
       response.setIncludePages(true);
       response.setListThirdPartyDeveloperTools();
@@ -227,7 +268,7 @@ export const navigatePage = definePageTool((args: ParsedArguments) => {
       try {
         const action = request.params.handleBeforeUnload ?? 'accept';
         const result = await page.waitForEventsAfterAction(
-          async () => {
+          async signal => {
             switch (request.params.type) {
               case 'url':
                 if (!request.params.url) {
@@ -236,53 +277,89 @@ export const navigatePage = definePageTool((args: ParsedArguments) => {
                   );
                 }
                 try {
-                  await page.pptrPage.goto(request.params.url, options);
+                  await navigateWithSignal(
+                    page.pptrPage.goto(request.params.url, options),
+                    signal,
+                  );
                   response.appendResponseLine(
                     `Successfully navigated to ${request.params.url}.`,
                   );
                 } catch (error) {
-                  response.appendResponseLine(
-                    `Unable to navigate in the selected page: ${error.message}.`,
-                  );
+                  if (page.getDialog() && !page.getDialog()?.handled) {
+                    response.appendResponseLine(
+                      `Successfully navigated to ${request.params.url}.`,
+                    );
+                  } else {
+                    response.appendResponseLine(
+                      `Unable to navigate in the selected page: ${error.message}.`,
+                    );
+                  }
                 }
                 break;
               case 'back':
                 try {
-                  await page.pptrPage.goBack(options);
+                  await navigateWithSignal(
+                    page.pptrPage.goBack(options),
+                    signal,
+                  );
                   response.appendResponseLine(
                     `Successfully navigated back to ${page.pptrPage.url()}.`,
                   );
                 } catch (error) {
-                  response.appendResponseLine(
-                    `Unable to navigate back in the selected page: ${error.message}.`,
-                  );
+                  if (page.getDialog() && !page.getDialog()?.handled) {
+                    response.appendResponseLine(
+                      `Successfully navigated back to ${page.pptrPage.url()}.`,
+                    );
+                  } else {
+                    response.appendResponseLine(
+                      `Unable to navigate back in the selected page: ${error.message}.`,
+                    );
+                  }
                 }
                 break;
               case 'forward':
                 try {
-                  await page.pptrPage.goForward(options);
+                  await navigateWithSignal(
+                    page.pptrPage.goForward(options),
+                    signal,
+                  );
                   response.appendResponseLine(
                     `Successfully navigated forward to ${page.pptrPage.url()}.`,
                   );
                 } catch (error) {
-                  response.appendResponseLine(
-                    `Unable to navigate forward in the selected page: ${error.message}.`,
-                  );
+                  if (page.getDialog() && !page.getDialog()?.handled) {
+                    response.appendResponseLine(
+                      `Successfully navigated forward to ${page.pptrPage.url()}.`,
+                    );
+                  } else {
+                    response.appendResponseLine(
+                      `Unable to navigate forward in the selected page: ${error.message}.`,
+                    );
+                  }
                 }
                 break;
               case 'reload':
                 try {
-                  await page.pptrPage.reload({
-                    ...options,
-                    ignoreCache: request.params.ignoreCache,
-                  });
+                  await navigateWithSignal(
+                    page.pptrPage.reload({
+                      ...options,
+                      ignoreCache: request.params.ignoreCache,
+                    }),
+                    signal,
+                  );
                   response.appendResponseLine(
                     `Successfully reloaded the page.`,
                   );
                 } catch (error) {
-                  response.appendResponseLine(
-                    `Unable to reload the selected page: ${error.message}.`,
-                  );
+                  if (page.getDialog() && !page.getDialog()?.handled) {
+                    response.appendResponseLine(
+                      `Successfully reloaded the page.`,
+                    );
+                  } else {
+                    response.appendResponseLine(
+                      `Unable to reload the selected page: ${error.message}.`,
+                    );
+                  }
                 }
                 break;
             }
