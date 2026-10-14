@@ -21,8 +21,8 @@ Start by running a Lighthouse accessibility audit to get a comprehensive baselin
     - Set `mode` to `"navigation"` to refresh the page and capture load issues.
     - Set `outputDirPath` (e.g., `/tmp/lh-report`) to save the full JSON report.
 2.  **Analyze the Summary**:
-    - Check `scores` (0-1 scale). A score < 1 indicates violations.
-    - Review `audits.failed` count.
+    - Check category scores (0-100 scale, e.g., `Accessibility: 24`). A score < 100 indicates violations.
+    - Review the `Failed` count in `Audit Summary`.
 3.  **Review the Report (CRITICAL)**:
     - **Parsing**: Do not read the entire file line-by-line. Use a CLI tool like `jq` or a Node.js one-liner to filter for failures:
       ```bash
@@ -73,12 +73,12 @@ _Pass the element's `uid` from the snapshot as an argument to `evaluate_script`.
 
 ### 7. Color Contrast
 
-To verify color contrast ratios, start by checking for native accessibility issues:
+To verify color contrast ratios:
 
-1.  Call `list_console_messages` with `types: ["issue"]`.
-2.  Look for "Low Contrast" issues in the output.
+1.  Check the `color-contrast` audit in the `lighthouse_audit` report (saved `report.json`).
+2.  To check a specific element manually, use `evaluate_script` with the **"Check Color Contrast" snippet** found in [references/a11y-snippets.md](references/a11y-snippets.md).
 
-If native audits do not report issues (which may happen in some headless environments) or if you need to check a specific element manually, use `evaluate_script` with the **"Check Color Contrast" snippet** found in [references/a11y-snippets.md](references/a11y-snippets.md).
+_Pass the element's `uid` from the snapshot as an argument to `evaluate_script`._
 
 ### 8. Global Page Checks
 
