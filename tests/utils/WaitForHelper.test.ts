@@ -58,6 +58,30 @@ describe('WaitForHelper', () => {
     assert.strictEqual(clock.countTimers(), 0);
   });
 
+  it('awaits a navigation scheduled after the action returns', async () => {
+    await withMcpContext(async (response, context) => {
+      server.addHtmlRoute(
+        '/scheduled-nav-target',
+        html`<main>scheduled</main>`,
+      );
+      const targetUrl = server.getRoute('/scheduled-nav-target');
+      const mcpPage = context.getSelectedMcpPage();
+
+      const result = await mcpPage.waitForEventsAfterAction(
+        async () => {
+          await mcpPage.pptrPage.evaluate(url => {
+            setTimeout(() => {
+              location.href = url;
+            }, 150);
+          }, targetUrl);
+        },
+        {waitForStableDom: false},
+      );
+
+      assert.strictEqual(result.navigatedToUrl, targetUrl);
+    });
+  });
+
   it('does not stall when an action opens a dialog without handleDialog', async () => {
     await withMcpContext(async (response, context) => {
       const mcpPage = context.getSelectedMcpPage();

@@ -35,7 +35,7 @@ export class WaitForHelper {
   ) {
     this.#stableDomTimeout = 3000 * cpuTimeoutMultiplier;
     this.#stableDomFor = 100 * cpuTimeoutMultiplier;
-    this.#expectNavigationIn = 100 * cpuTimeoutMultiplier;
+    this.#expectNavigationIn = 500 * cpuTimeoutMultiplier;
     this.#navigationTimeout = 3000 * networkTimeoutMultiplier;
     this.#page = page as unknown as CdpPage;
     this.#initialUrl = page.url();
@@ -192,11 +192,21 @@ export class WaitForHelper {
         navigationStartedResolvers.resolve(true);
       }
     };
+    const scheduledNavigationListener = (
+      event: Protocol.Page.FrameScheduledNavigationEvent,
+    ): void => {
+      if (event.frameId === this.#page.mainFrame()._id) {
+        navigationStartedResolvers.resolve(true);
+      }
+    };
 
     this.#page._client().on('Page.frameStartedNavigating', navigationListener);
     this.#page
       ._client()
       .on('Page.frameRequestedNavigation', requestedNavigationListener);
+    this.#page
+      ._client()
+      .on('Page.frameScheduledNavigation', scheduledNavigationListener);
     navigationAbortController.signal.addEventListener('abort', () => {
       this.#page
         ._client()
@@ -204,6 +214,9 @@ export class WaitForHelper {
       this.#page
         ._client()
         .off('Page.frameRequestedNavigation', requestedNavigationListener);
+      this.#page
+        ._client()
+        .off('Page.frameScheduledNavigation', scheduledNavigationListener);
     });
     this.#abortController.signal.addEventListener(
       'abort',
