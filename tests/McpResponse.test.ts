@@ -15,7 +15,11 @@ import type {ParsedArguments} from '../src/config/ConfigParser.js';
 import type {McpContext} from '../src/McpContext.js';
 import {McpResponse} from '../src/McpResponse.js';
 import {TextSnapshot} from '../src/TextSnapshot.js';
-import {DevTools, type Extension} from '../src/third_party/index.js';
+import {
+  DevTools,
+  type Extension,
+  type HTTPRequest,
+} from '../src/third_party/index.js';
 import type {TextSnapshotNode} from '../src/types.js';
 import {parseByteSizeRange} from '../src/utils/bytes.js';
 import {stableIdSymbol} from '../src/utils/id.js';
@@ -627,6 +631,80 @@ describe('McpResponse network request filtering', () => {
       const {content, structuredContent} = await response.handle(context);
       t.assert.snapshot(getTextContent(content[0]));
       t.assert.snapshot(stabilizeStructuredContent(structuredContent));
+    });
+  });
+
+  it('filters preflight and prefetch requests correctly', async () => {
+    await withMcpContext(async (response, context) => {
+      const preflightReq = {
+        ...getMockRequest({
+          url: 'http://example.com/data?cors',
+          method: 'OPTIONS',
+          resourceType: 'other',
+          headers: {'access-control-request-method': 'PUT'},
+        }),
+        initiator: () => ({type: 'preflight' as const}),
+      } as unknown as HTTPRequest;
+
+      const prefetchReq = {
+        ...getMockRequest({
+          url: 'http://example.com/data?prefetch',
+          method: 'GET',
+          resourceType: 'other',
+          headers: {'sec-purpose': 'prefetch'},
+        }),
+        initiator: () => ({type: 'parser' as const}),
+      } as unknown as HTTPRequest;
+
+      const otherReq = {
+        ...getMockRequest({
+          url: 'http://example.com/favicon.ico',
+          method: 'GET',
+          resourceType: 'other',
+        }),
+      } as unknown as HTTPRequest;
+
+      const fetchReq = {
+        ...getMockRequest({
+          url: 'http://example.com/data?cors',
+          method: 'PUT',
+          resourceType: 'fetch',
+        }),
+      } as unknown as HTTPRequest;
+
+      const allRequests = [preflightReq, prefetchReq, otherReq, fetchReq];
+      context.getSelectedMcpPage().getNetworkRequests = () => allRequests;
+
+      // 1. Filter by preflight
+      response.setIncludeNetworkRequests(true, {
+        resourceTypes: ['preflight'],
+      });
+      const preflightResult = await response.handle(context);
+      const preflightText = getTextContent(preflightResult.content[0]);
+      assert.ok(preflightText.includes('http://example.com/data?cors'));
+      assert.ok(preflightText.includes('OPTIONS'));
+      assert.ok(!preflightText.includes('prefetch'));
+      assert.ok(!preflightText.includes('favicon.ico'));
+
+      // 2. Filter by prefetch
+      response.setIncludeNetworkRequests(true, {
+        resourceTypes: ['prefetch'],
+      });
+      const prefetchResult = await response.handle(context);
+      const prefetchText = getTextContent(prefetchResult.content[0]);
+      assert.ok(prefetchText.includes('http://example.com/data?prefetch'));
+      assert.ok(!prefetchText.includes('cors'));
+      assert.ok(!prefetchText.includes('favicon.ico'));
+
+      // 3. Filter by other (should only return genuine other like favicon.ico, not preflight or prefetch)
+      response.setIncludeNetworkRequests(true, {
+        resourceTypes: ['other'],
+      });
+      const otherResult = await response.handle(context);
+      const otherText = getTextContent(otherResult.content[0]);
+      assert.ok(otherText.includes('favicon.ico'));
+      assert.ok(!otherText.includes('data?cors'));
+      assert.ok(!otherText.includes('data?prefetch'));
     });
   });
 

@@ -717,7 +717,7 @@ export class McpResponse implements Response {
         this.#networkRequestsOptions.resourceTypes,
       );
       requests = requests.filter(request => {
-        const type = request.resourceType();
+        const type = getEffectiveResourceType(request);
         return normalizedTypes.has(type);
       });
     }
@@ -1726,6 +1726,25 @@ Call ${handleDialog(this.#args).name} to handle it before continuing.`);
     this.#textResponseLines = [];
   }
 }
+function getEffectiveResourceType(request: HTTPRequest): ResourceType {
+  const type = request.resourceType();
+  if (type === 'other') {
+    if (
+      request.method() === 'OPTIONS' &&
+      (request.initiator()?.type === 'preflight' ||
+        'access-control-request-method' in request.headers())
+    ) {
+      return 'preflight';
+    }
+    const headers = request.headers();
+    const purpose = headers['sec-purpose'] ?? headers['purpose'];
+    if (purpose && purpose.toLowerCase().includes('prefetch')) {
+      return 'prefetch';
+    }
+  }
+  return type;
+}
+
 function truncateTitle(title: string, maxLength = 50): string {
   if (title.length <= maxLength) {
     return title;
