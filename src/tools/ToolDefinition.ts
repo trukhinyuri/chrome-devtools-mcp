@@ -151,6 +151,10 @@ export interface LighthouseData {
     timing: {
       total: number;
     };
+    runtimeError?: {
+      code: string;
+      message: string;
+    };
   };
   reports: string[];
 }

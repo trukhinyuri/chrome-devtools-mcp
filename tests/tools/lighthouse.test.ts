@@ -257,5 +257,36 @@ describe('lighthouse', () => {
       assert.equal(summary.device, 'mobile');
       assert.deepEqual(reports, [`${reportPath}.json`, `${reportPath}.html`]);
     });
+
+    it('surfaces Lighthouse runtimeError in summary when page load fails', async () => {
+      const {page, context, response, args} = createHandlerMocks();
+      context.saveTemporaryFile.resolves({filepath: 'report.json'});
+      const runtimeError = {
+        code: 'ERRORED_DOCUMENT_REQUEST',
+        message:
+          'Lighthouse was unable to reliably load the page you requested. (Status code: 404)',
+      };
+      sinon.stub(lighthouseRunner, 'navigation').resolves(
+        createMockRunnerResult({
+          runtimeError,
+        }),
+      );
+
+      await lighthouseAudit(args).handler(
+        {
+          params: {
+            mode: 'navigation',
+            device: 'desktop',
+          },
+          page,
+        },
+        response,
+        context,
+      );
+
+      sinon.assert.calledOnce(response.attachLighthouseResult);
+      const {summary} = response.attachLighthouseResult.firstCall.args[0];
+      assert.deepEqual(summary.runtimeError, runtimeError);
+    });
   });
 });

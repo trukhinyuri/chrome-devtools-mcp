@@ -979,6 +979,54 @@ describe('lighthouse', () => {
       t.assert.snapshot(stabilizeStructuredContent(structuredContent));
     });
   });
+
+  it('formats lighthouse runtimeError in response output', async () => {
+    await withMcpContext(async (response, context) => {
+      const lighthouseResult = {
+        summary: {
+          mode: 'navigation',
+          device: 'desktop',
+          url: 'https://example.com/404',
+          scores: [],
+          audits: {
+            failed: 0,
+            passed: 0,
+          },
+          timing: {
+            total: 500,
+          },
+          runtimeError: {
+            code: 'ERRORED_DOCUMENT_REQUEST',
+            message:
+              'Lighthouse was unable to reliably load the page you requested.',
+          },
+        },
+        reports: ['/tmp/report.json'],
+      };
+
+      response.attachLighthouseResult(lighthouseResult);
+      const {content, structuredContent} = await response.handle(context);
+
+      const text = getTextContent(content[0]);
+      assert.ok(
+        text.includes(
+          'Runtime Error: [ERRORED_DOCUMENT_REQUEST] Lighthouse was unable to reliably load the page you requested.',
+        ),
+      );
+      assert.deepEqual(
+        (
+          structuredContent as {
+            lighthouseResult?: typeof lighthouseResult;
+          }
+        ).lighthouseResult?.summary.runtimeError,
+        {
+          code: 'ERRORED_DOCUMENT_REQUEST',
+          message:
+            'Lighthouse was unable to reliably load the page you requested.',
+        },
+      );
+    });
+  });
 });
 
 describe('third-party developer tools', () => {

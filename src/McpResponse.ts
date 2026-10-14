@@ -1195,6 +1195,11 @@ Call ${handleDialog(this.#args).name} to handle it before continuing.`);
       response.push(`Mode: ${summary.mode}`);
       response.push(`Device: ${summary.device}`);
       response.push(`URL: ${summary.url}`);
+      if (summary.runtimeError) {
+        response.push(
+          `Runtime Error: [${summary.runtimeError.code}] ${summary.runtimeError.message}`,
+        );
+      }
       response.push('### Category Scores');
       for (const score of summary.scores) {
         // Lighthouse uses a null score for categories that could not be

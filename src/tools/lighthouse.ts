@@ -185,6 +185,14 @@ export const lighthouseAudit = definePageTool((args: ParsedArguments) => ({
         timing: {
           total: lhr.timing.total,
         },
+        ...(lhr.runtimeError
+          ? {
+              runtimeError: {
+                code: lhr.runtimeError.code,
+                message: lhr.runtimeError.message,
+              },
+            }
+          : {}),
       },
       reports: reportPaths,
     };
