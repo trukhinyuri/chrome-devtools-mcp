@@ -117,6 +117,7 @@ export class ConsoleFormatter {
         devTools: options?.devTools,
         details: msg.details,
         targetId: msg.targetId,
+        session: msg.session,
         includeStackAndCause:
           options?.fetchDetailedData || options?.fetchStackTrace,
         resolvedStackTraceForTesting: options?.resolvedStackTraceForTesting,
@@ -225,7 +226,7 @@ export class ConsoleFormatter {
       argsCount: this.#argCount,
       id: this.#id,
     };
-    if (this.#includeStackInConcise && this.#stack) {
+    if (this.#includeStackInConcise && (this.#stack || this.#cause)) {
       json.stackTrace = formatStackTrace(this.#stack, this.#cause, this, {
         includeNote: false,
       });
@@ -285,9 +286,10 @@ export class ConsoleFormatter {
       text: this.#getText(),
       argsCount: this.#argCount,
       args: this.#getArgs().map(arg => formatArg(arg, this)),
-      stackTrace: this.#stack
-        ? formatStackTrace(this.#stack, this.#cause, this)
-        : undefined,
+      stackTrace:
+        this.#stack || this.#cause
+          ? formatStackTrace(this.#stack, this.#cause, this)
+          : undefined,
     };
   }
 }
@@ -370,7 +372,7 @@ function formatArg(arg: unknown, formatter: {isIgnored: IgnoreCheck}): string {
   if (arg instanceof SymbolizedError) {
     return [
       arg.message,
-      arg.stackTrace
+      arg.stackTrace || arg.cause
         ? formatStackTrace(arg.stackTrace, arg.cause, formatter)
         : undefined,
     ]
@@ -383,7 +385,7 @@ function formatArg(arg: unknown, formatter: {isIgnored: IgnoreCheck}): string {
 const STACK_TRACE_MAX_LINES = 50;
 
 function formatStackTrace(
-  stackTrace: DevTools.DevTools.StackTrace.StackTrace.StackTrace,
+  stackTrace: DevTools.DevTools.StackTrace.StackTrace.StackTrace | undefined,
   cause: SymbolizedError | undefined,
   formatter: {isIgnored: IgnoreCheck},
   options?: {includeNote?: boolean},
@@ -391,11 +393,12 @@ function formatStackTrace(
   const lines = formatStackTraceInner(stackTrace, cause, formatter);
   const includedLines = lines.slice(0, STACK_TRACE_MAX_LINES);
   const reminderCount = lines.length - includedLines.length;
+  const hasFrames = lines.some(l => l.startsWith('at '));
 
   return [
     ...includedLines,
     reminderCount > 0 ? `... and ${reminderCount} more frames` : '',
-    options?.includeNote === false
+    options?.includeNote === false || !hasFrames
       ? ''
       : 'Note: line and column numbers use 1-based indexing',
   ]
@@ -408,17 +411,16 @@ function formatStackTraceInner(
   cause: SymbolizedError | undefined,
   formatter: {isIgnored: IgnoreCheck},
 ): string[] {
-  if (!stackTrace) {
-    return [];
-  }
+  const frames = stackTrace
+    ? [
+        ...formatFragment(stackTrace.syncFragment, formatter),
+        ...stackTrace.asyncFragments
+          .map(item => formatAsyncFragment(item, formatter))
+          .flat(),
+      ]
+    : [];
 
-  return [
-    ...formatFragment(stackTrace.syncFragment, formatter),
-    ...stackTrace.asyncFragments
-      .map(item => formatAsyncFragment(item, formatter))
-      .flat(),
-    ...formatCause(cause, formatter),
-  ];
+  return [...frames, ...formatCause(cause, formatter)];
 }
 
 function formatFragment(

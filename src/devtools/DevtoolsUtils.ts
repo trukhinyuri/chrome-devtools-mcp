@@ -258,9 +258,11 @@ export class SymbolizedError {
     includeStackAndCause?: boolean;
     resolvedStackTraceForTesting?: DevTools.StackTrace.StackTrace.StackTrace;
     resolvedCauseForTesting?: SymbolizedError;
+    session?: CDPSession;
+    errorObject?: RemoteObjectLike;
   }): Promise<SymbolizedError> {
     const message = SymbolizedError.#getMessage(opts.details);
-    if (!opts.includeStackAndCause || !opts.devTools) {
+    if (!opts.includeStackAndCause || (!opts.devTools && !opts.session)) {
       return new SymbolizedError(
         message,
         opts.resolvedStackTraceForTesting,
@@ -271,7 +273,7 @@ export class SymbolizedError {
     let stackTrace: DevTools.StackTrace.StackTrace.StackTrace | undefined;
     if (opts.resolvedStackTraceForTesting) {
       stackTrace = opts.resolvedStackTraceForTesting;
-    } else if (opts.details.stackTrace) {
+    } else if (opts.details.stackTrace && opts.devTools) {
       try {
         stackTrace = await createStackTrace(
           opts.devTools,
@@ -283,27 +285,30 @@ export class SymbolizedError {
       }
     }
 
-    // TODO: Turn opts.details.exception into a JSHandle and retrieve the 'cause' property.
-    //       If its an Error, recursively create a SymbolizedError.
     let cause: SymbolizedError | undefined;
     if (opts.resolvedCauseForTesting) {
       cause = opts.resolvedCauseForTesting;
-    } else if (opts.details.exception) {
-      try {
-        const causeRemoteObj = await SymbolizedError.#lookupCause(
-          opts.devTools,
-          opts.details.exception,
-          opts.targetId,
-        );
-        if (causeRemoteObj) {
-          cause = await SymbolizedError.fromError({
-            devTools: opts.devTools,
-            error: causeRemoteObj,
-            targetId: opts.targetId,
-          });
+    } else {
+      const errorObj = opts.details.exception ?? opts.errorObject;
+      if (errorObj) {
+        try {
+          const causeRemoteObj = await SymbolizedError.#lookupCause(
+            opts.devTools,
+            errorObj,
+            opts.targetId,
+            opts.session,
+          );
+          if (causeRemoteObj) {
+            cause = await SymbolizedError.fromError({
+              devTools: opts.devTools,
+              error: causeRemoteObj,
+              targetId: opts.targetId,
+              session: opts.session,
+            });
+          }
+        } catch {
+          // Ignore
         }
-      } catch {
-        // Ignore
       }
     }
     return new SymbolizedError(message, stackTrace, cause);
@@ -313,17 +318,21 @@ export class SymbolizedError {
     devTools?: TargetUniverse;
     error: RemoteObjectLike;
     targetId: string;
+    session?: CDPSession;
   }): Promise<SymbolizedError> {
     const details = await SymbolizedError.#getExceptionDetails(
       opts.devTools,
       opts.error,
       opts.targetId,
+      opts.session,
     );
     if (details) {
       return await SymbolizedError.fromDetails({
         details,
+        errorObject: opts.error,
         devTools: opts.devTools,
         targetId: opts.targetId,
+        session: opts.session,
         includeStackAndCause: true,
       });
     }
@@ -347,7 +356,10 @@ export class SymbolizedError {
   }
 
   static #getMessageFromException(error: RemoteObjectLike): string {
-    const messageWithRest = error.description?.split('\n    at ', 2) ?? [];
+    const raw =
+      error.description ??
+      (error.value !== undefined ? String(error.value) : '');
+    const messageWithRest = raw.split('\n    at ', 2);
     return messageWithRest[0] ?? '';
   }
 
@@ -355,8 +367,29 @@ export class SymbolizedError {
     devTools: TargetUniverse | undefined,
     error: RemoteObjectLike,
     targetId: string,
-  ): Promise<DevTools.Protocol.Runtime.ExceptionDetails | null> {
-    if (!devTools || (error.type !== 'object' && error.subtype !== 'error')) {
+    session?: CDPSession,
+  ): Promise<ExceptionDetailsLike | null> {
+    if (error.type !== 'object' && error.subtype !== 'error') {
+      return null;
+    }
+    if (!error.objectId) {
+      return null;
+    }
+
+    if (session) {
+      try {
+        const response = await session.send('Runtime.getExceptionDetails', {
+          errorObjectId: error.objectId,
+        });
+        if (response.exceptionDetails) {
+          return response.exceptionDetails;
+        }
+      } catch {
+        // Fall back to devTools target
+      }
+    }
+
+    if (!devTools) {
       return null;
     }
 
@@ -376,8 +409,30 @@ export class SymbolizedError {
     devTools: TargetUniverse | undefined,
     error: RemoteObjectLike,
     targetId: string,
-  ): Promise<DevTools.Protocol.Runtime.RemoteObject | null> {
-    if (!devTools || (error.type !== 'object' && error.subtype !== 'error')) {
+    session?: CDPSession,
+  ): Promise<RemoteObjectLike | null> {
+    if (error.type !== 'object' && error.subtype !== 'error') {
+      return null;
+    }
+    if (!error.objectId) {
+      return null;
+    }
+
+    if (session) {
+      try {
+        const response = await session.send('Runtime.getProperties', {
+          objectId: error.objectId,
+        });
+        const causeProp = response.result.find(prop => prop.name === 'cause');
+        if (causeProp?.value) {
+          return causeProp.value;
+        }
+      } catch {
+        // Fall back to devTools target
+      }
+    }
+
+    if (!devTools) {
       return null;
     }
 

@@ -612,6 +612,42 @@ describe('console', () => {
       });
     });
 
+    it('preserves cause chain for uncaught errors thrown after page load (#2950)', async () => {
+      server.addHtmlRoute(
+        '/cause.html',
+        `<!doctype html>
+        <title>cause</title>
+        <script>
+        setTimeout(() => { throw new Error('async-outer', {cause: new Error('async-inner')}); }, 50);
+        </script>`,
+      );
+
+      await withMcpContext(async (response, context, args) => {
+        const page = await context.newPage();
+        await page.waitForEventsAfterAction(async () => {
+          await page.pptrPage.goto(server.getRoute('/cause.html'));
+        });
+        await new Promise(r => setTimeout(r, 200));
+
+        response.setPage(page);
+        await listConsoleMessages(args).handler(
+          {
+            params: {
+              includeStackTraces: true,
+              types: ['error'],
+            },
+            page,
+          },
+          response,
+          context,
+        );
+        const formattedResponse = await response.handle(context);
+        const rawText = getTextContent(formattedResponse.content[0]);
+        assert.ok(rawText.includes('Uncaught Error: async-outer'));
+        assert.ok(rawText.includes('Caused by: Error: async-inner'));
+      });
+    });
+
     it('applies source maps to stack traces of Error object (with cause) console.log arguments', async t => {
       server.addRoute('/main.min.js', (_req, res) => {
         res.setHeader('Content-Type', 'text/javascript');
