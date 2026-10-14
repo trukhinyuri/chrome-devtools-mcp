@@ -374,6 +374,61 @@ describe('NetworkFormatter', () => {
         `redirect chain order differs between text and JSON`,
       );
     });
+    it('omits self and subsequent hops from redirect chain for first and intermediate hops', async () => {
+      const first = getMockRequest({url: 'http://example.com/r1'});
+      const second = getMockRequest({url: 'http://example.com/r2'});
+      const sharedChain = [first, second];
+      (first as {redirectChain: () => HTTPRequest[]}).redirectChain = () =>
+        sharedChain;
+      (second as {redirectChain: () => HTTPRequest[]}).redirectChain = () =>
+        sharedChain;
+      const final = getMockRequest({
+        url: 'http://example.com/final',
+        redirectChain: sharedChain,
+      });
+
+      // 1. First hop: should have no redirect chain
+      const formatterFirst = await NetworkFormatter.from(first, {
+        requestId: 2,
+        requestIdResolver: req => (req === first ? 2 : 3),
+        redactNetworkHeaders: false,
+      });
+      const firstText = formatterFirst.toStringDetailed();
+      const firstJson = formatterFirst.toJSONDetailed();
+      assert.strictEqual(firstJson.redirectChain, undefined);
+      assert.ok(!firstText.includes('### Redirect chain'));
+
+      // 2. Intermediate hop: should only list predecessors (r1), not itself (r2)
+      const formatterSecond = await NetworkFormatter.from(second, {
+        requestId: 3,
+        requestIdResolver: req => (req === first ? 2 : 3),
+        redactNetworkHeaders: false,
+      });
+      const secondText = formatterSecond.toStringDetailed();
+      const secondJson = formatterSecond.toJSONDetailed();
+      assert.deepStrictEqual(
+        secondJson.redirectChain?.map(r => r.url),
+        ['http://example.com/r1'],
+      );
+      assert.ok(secondText.includes('http://example.com/r1'));
+      assert.ok(
+        !secondText.includes(
+          '### Redirect chain\nreqid=3 GET http://example.com/r2',
+        ),
+      );
+
+      // 3. Final request: lists [r2, r1]
+      const formatterFinal = await NetworkFormatter.from(final, {
+        requestId: 4,
+        requestIdResolver: req => (req === first ? 2 : 3),
+        redactNetworkHeaders: false,
+      });
+      const finalJson = formatterFinal.toJSONDetailed();
+      assert.deepStrictEqual(
+        finalJson.redirectChain?.map(r => r.url),
+        ['http://example.com/r2', 'http://example.com/r1'],
+      );
+    });
     it('shows saved to file message in toStringDetailed', async () => {
       const request = {
         method: () => 'POST',

@@ -177,7 +177,10 @@ export class NetworkFormatter {
 
   toJSONDetailed(): NetworkRequestDetailed {
     const redirectChain = this.#request.redirectChain();
-    const formattedRedirectChain = redirectChain.reverse().map(request => {
+    const selfIndex = redirectChain.indexOf(this.#request);
+    const precedingChain =
+      selfIndex === -1 ? redirectChain : redirectChain.slice(0, selfIndex);
+    const formattedRedirectChain = precedingChain.reverse().map(request => {
       const id = this.#options.requestIdResolver
         ? this.#options.requestIdResolver(request)
         : undefined;
