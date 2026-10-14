@@ -106,6 +106,54 @@ describe('lighthouse', () => {
       sinon.assert.calledOnceWithExactly(page.restoreEmulation);
     });
 
+    it('provides an actionable error when navigation mode is run on file:// URLs', async () => {
+      const {page, context, response, args} = createHandlerMocks();
+      page.pptrPage.url.returns('file:///tmp/file-page.html');
+      const invalidUrlError = new Error('INVALID_URL');
+      (invalidUrlError as {code?: string}).code = 'INVALID_URL';
+      sinon.stub(lighthouseRunner, 'navigation').rejects(invalidUrlError);
+
+      await assert.rejects(
+        () =>
+          lighthouseAudit(args).handler(
+            {
+              params: {
+                mode: 'navigation',
+                device: 'desktop',
+              },
+              page,
+            },
+            response,
+            context,
+          ),
+        /Lighthouse navigation mode does not support file: URLs\. Use mode: "snapshot"/,
+      );
+    });
+
+    it('provides an actionable error when navigation mode is run on about:blank', async () => {
+      const {page, context, response, args} = createHandlerMocks();
+      page.pptrPage.url.returns('about:blank');
+      const invalidUrlError = new Error('INVALID_URL');
+      (invalidUrlError as {code?: string}).code = 'INVALID_URL';
+      sinon.stub(lighthouseRunner, 'navigation').rejects(invalidUrlError);
+
+      await assert.rejects(
+        () =>
+          lighthouseAudit(args).handler(
+            {
+              params: {
+                mode: 'navigation',
+                device: 'desktop',
+              },
+              page,
+            },
+            response,
+            context,
+          ),
+        /Lighthouse navigation mode does not support about:blank URLs\. Use mode: "snapshot"/,
+      );
+    });
+
     it('emulates a desktop user agent for desktop audits', async () => {
       const {page, context, response, args} = createHandlerMocks();
       context.saveTemporaryFile.resolves({filepath: 'report.json'});

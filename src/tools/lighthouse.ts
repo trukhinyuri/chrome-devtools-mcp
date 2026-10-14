@@ -105,13 +105,36 @@ export const lighthouseAudit = definePageTool((args: ParsedArguments) => ({
     let result: RunnerResult | undefined;
     try {
       if (mode === 'navigation') {
-        result = await lighthouseRunner.navigation(
-          page.pptrPage,
-          page.pptrPage.url(),
-          {
-            flags,
-          },
-        );
+        try {
+          result = await lighthouseRunner.navigation(
+            page.pptrPage,
+            page.pptrPage.url(),
+            {
+              flags,
+            },
+          );
+        } catch (err) {
+          if (
+            err instanceof Error &&
+            ((err as {code?: string}).code === 'INVALID_URL' ||
+              err.message.includes('INVALID_URL'))
+          ) {
+            const currentUrl = page.pptrPage.url();
+            let target = currentUrl;
+            try {
+              const parsed = new URL(currentUrl);
+              target =
+                parsed.protocol === 'about:' ? parsed.href : parsed.protocol;
+            } catch {
+              target = currentUrl;
+            }
+            throw new Error(
+              `Lighthouse navigation mode does not support ${target} URLs. Use mode: "snapshot" to audit the current page state, or serve the page over HTTP/HTTPS.`,
+              {cause: err},
+            );
+          }
+          throw err;
+        }
       } else {
         result = await lighthouseRunner.snapshot(page.pptrPage, {
           flags,
